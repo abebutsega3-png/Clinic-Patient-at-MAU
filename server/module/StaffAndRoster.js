@@ -29,7 +29,8 @@ const rosterSchema = new mongoose.Schema({
     required: true 
   },
   isLocked: { type: Boolean, default: false }, // በ Approvals ምክንያት "leave" ከሆነ true ይሆናል
-  assignedBy: { type: String, default: 'Clinic Head' }
+  assignedBy: { type: String, default: 'Clinic Head' },
+  publishedAt: { type: Date, default: null }
 }, { timestamps: true });
 
 // አንድ ሰራተኛ በአንድ ቀን ሁለት ፈረቃ እንዳይኖረው መከልከያ
