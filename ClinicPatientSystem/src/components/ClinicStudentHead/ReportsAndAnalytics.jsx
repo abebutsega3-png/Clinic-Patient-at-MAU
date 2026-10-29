@@ -2,18 +2,42 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import {
-  Activity, AlertTriangle, BarChart3, CalendarDays, Clock3, Download,
+  Activity, AlertTriangle, BarChart3, Clock3, Download,
   FileBarChart, FileText, Pill, Printer, Users
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const emptyAnalytics = {
-  summary: { totalPatients: 0, avgWaitTime: 0, emergencyPatients: 0, totalMedicinesDispensed: 0 },
+  summary: {
+    totalPatients: 0,
+    avgWaitTime: null,
+    emergencyPatients: 0,
+    totalMedicinesDispensed: null,
+    attendance: { present: 0, late: 0, absent: 0, approvedLeaveRequests: 0 },
+    requisitions: {
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      returned: 0,
+      pendingEstimatedCost: 0,
+      approvedEstimatedCost: 0,
+      averageApprovalHours: null
+    }
+  },
   patientTrends: [],
   topDiseases: [],
   departmentWorkload: [],
   medicineUsage: [],
   staffPerformance: [],
+  currentInventory: {
+    itemCount: 0,
+    lowStockCount: 0,
+    outOfStockCount: 0,
+    expiredBatchCount: 0,
+    expiringBatchCount: 0,
+    expiryByMonth: []
+  },
+  inventoryNote: '',
   departments: []
 };
 
@@ -37,6 +61,9 @@ const getPresetRange = (preset) => {
     start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
   } else if (preset === 'month') {
     start.setUTCDate(1);
+  } else if (preset === 'year') {
+    start.setUTCDate(1);
+    start.setUTCMonth(start.getUTCMonth() - 11);
   }
   return [start.toISOString().slice(0, 10), endKey];
 };
@@ -76,7 +103,7 @@ const BarList = ({ rows, nameKey, valueKey, emptyText = 'No recorded data for th
   );
 };
 
-const PatientTrend = ({ rows }) => {
+const PatientTrend = ({ rows, interval }) => {
   if (!rows.length) return <p className="py-12 text-center text-sm text-slate-400">No patient visits were recorded for this range.</p>;
 
   const width = 640;
@@ -103,7 +130,7 @@ const PatientTrend = ({ rows }) => {
         <path d={line} fill="none" stroke="#0d9488" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
         {points.map((point) => <circle key={point._id} cx={point.x} cy={point.y} r="4" fill="#0d9488" />)}
         {shownLabels.map((point) => (
-          <text key={point._id} x={point.x} y={height - 5} textAnchor="middle" fontSize="10" fill="#64748b">{point._id.slice(5)}</text>
+          <text key={point._id} x={point.x} y={height - 5} textAnchor="middle" fontSize="10" fill="#64748b">{interval === 'month' ? point._id : point._id.slice(5)}</text>
         ))}
       </svg>
     </div>
@@ -151,7 +178,17 @@ const ReportsAndAnalytics = () => {
         axios.get(`/api/reports/analytics?${query}`, authConfig),
         axios.get(`/api/reports/department-reports?${query}`, authConfig)
       ]);
-      setAnalytics({ ...emptyAnalytics, ...analyticsResponse.data, summary: { ...emptyAnalytics.summary, ...analyticsResponse.data.summary } });
+      setAnalytics({
+        ...emptyAnalytics,
+        ...analyticsResponse.data,
+        summary: {
+          ...emptyAnalytics.summary,
+          ...analyticsResponse.data.summary,
+          attendance: { ...emptyAnalytics.summary.attendance, ...analyticsResponse.data.summary.attendance },
+          requisitions: { ...emptyAnalytics.summary.requisitions, ...analyticsResponse.data.summary.requisitions }
+        },
+        currentInventory: { ...emptyAnalytics.currentInventory, ...analyticsResponse.data.currentInventory }
+      });
       setReports(Array.isArray(reportsResponse.data.data) ? reportsResponse.data.data : []);
     } catch (loadError) {
       console.error('Failed to load reports and analytics:', loadError);
@@ -189,12 +226,31 @@ const ReportsAndAnalytics = () => {
       ['Reports & Analytics', `Period: ${startDate || 'All'} to ${endDate || 'All'}`, `Department: ${department}`],
       [],
       ['Summary', 'Value'],
-      ['Total patients', analytics.summary.totalPatients],
-      ['Average wait (minutes)', analytics.summary.avgWaitTime],
+      ['Total visits', analytics.summary.totalPatients],
+      ['Average wait (minutes)', analytics.summary.avgWaitTime ?? 'Not recorded'],
       ['Emergency patients', analytics.summary.emergencyPatients],
-      ['Medicines dispensed', analytics.summary.totalMedicinesDispensed],
+      ['Medicines dispensed', analytics.summary.totalMedicinesDispensed ?? 'Not recorded'],
+      ['Present records', analytics.summary.attendance.present],
+      ['Late records', analytics.summary.attendance.late],
+      ['Absent records', analytics.summary.attendance.absent],
+      ['Approved leave requests', analytics.summary.attendance.approvedLeaveRequests],
+      ['Pending purchase requests', analytics.summary.requisitions.pending],
+      ['Approved purchase requests', analytics.summary.requisitions.approved],
+      ['Rejected purchase requests', analytics.summary.requisitions.rejected],
+      ['Returned purchase requests', analytics.summary.requisitions.returned],
+      ['Pending estimated procurement cost (ETB)', analytics.summary.requisitions.pendingEstimatedCost],
+      ['Approved estimated procurement cost (ETB)', analytics.summary.requisitions.approvedEstimatedCost],
+      ['Average requisition approval hours', analytics.summary.requisitions.averageApprovalHours ?? 'Not recorded'],
       [],
-      ['Patient flow', 'Date', 'Patients'],
+      ['Current inventory snapshot', 'Value'],
+      ['Inventory items', analytics.currentInventory.itemCount],
+      ['Low stock items', analytics.currentInventory.lowStockCount],
+      ['Out of stock items', analytics.currentInventory.outOfStockCount],
+      ['Expired batches', analytics.currentInventory.expiredBatchCount],
+      ['Near-expiry batches', analytics.currentInventory.expiringBatchCount],
+      ['Inventory data limitation', analytics.inventoryNote],
+      [],
+      ['Patient flow', analytics.trendInterval === 'month' ? 'Month' : 'Date', 'Visits'],
       ...analytics.patientTrends.map((row) => ['', row._id, row.count]),
       [],
       ['Common diseases', 'Diagnosis', 'Cases'],
@@ -206,8 +262,8 @@ const ReportsAndAnalytics = () => {
       ['Medicine usage', 'Medicine', 'Quantity', 'Dispenses'],
       ...analytics.medicineUsage.map((row) => ['', row._id, row.quantityDispensed, row.timesDispensed]),
       [],
-      ['Staff performance', 'Staff', 'Role', 'Department', 'Patients served', 'Days attended'],
-      ...analytics.staffPerformance.map((staff) => ['', staff.name, staff.role, staff.department, staff.patientsServed, staff.attendedDays]),
+      ['Staff performance', 'Staff', 'Role', 'Department', 'Patients served', 'Days attended', 'Avg patients per attended day'],
+      ...analytics.staffPerformance.map((staff) => ['', staff.name, staff.role, staff.department, staff.patientsServed, staff.attendedDays, staff.averagePatientsPerAttendedDay ?? 'Not recorded']),
       [],
       ['Department reports', 'Department', 'Title', 'Submitted by', 'Submitted', 'Status'],
       ...reports.map((report) => ['', report.department, report.title, report.submittedBy?.name || report.submittedBy?.username || '', report.submittedAt, report.status])
@@ -235,16 +291,40 @@ const ReportsAndAnalytics = () => {
       pdf.setFontSize(10);
       pdf.text(`Period: ${startDate || 'All'} to ${endDate || 'All'} | Department: ${department}`, 14, 23);
       pdf.text(
-        `Total visits: ${analytics.summary.totalPatients} | Emergency visits: ${analytics.summary.emergencyPatients} | Medicines dispensed: ${analytics.summary.totalMedicinesDispensed} | Average wait: ${analytics.summary.avgWaitTime == null ? 'Not recorded' : `${analytics.summary.avgWaitTime} min`}`,
+        `Total visits: ${analytics.summary.totalPatients} | Emergency visits: ${analytics.summary.emergencyPatients} | Medicines dispensed: ${analytics.summary.totalMedicinesDispensed ?? 'Not recorded'} | Average wait: ${analytics.summary.avgWaitTime == null ? 'Not recorded' : `${analytics.summary.avgWaitTime} min`}`,
         14,
         29,
       );
       const tables = [
-        ['Patient flow', ['Date', 'Visits'], analytics.patientTrends.map((row) => [row._id, row.count])],
+        ['Staff attendance', ['Status', 'Records'], [
+          ['Present', analytics.summary.attendance.present],
+          ['Late', analytics.summary.attendance.late],
+          ['Absent', analytics.summary.attendance.absent],
+          ['Approved leave requests', analytics.summary.attendance.approvedLeaveRequests]
+        ]],
+        ['Purchase requisitions', ['Metric', 'Value'], [
+          ['Pending', analytics.summary.requisitions.pending],
+          ['Approved', analytics.summary.requisitions.approved],
+          ['Rejected', analytics.summary.requisitions.rejected],
+          ['Returned', analytics.summary.requisitions.returned],
+          ['Pending estimated cost (ETB)', analytics.summary.requisitions.pendingEstimatedCost],
+          ['Approved estimated cost (ETB)', analytics.summary.requisitions.approvedEstimatedCost],
+          ['Average approval time (hours)', analytics.summary.requisitions.averageApprovalHours ?? 'Not recorded']
+        ]],
+        ['Current inventory snapshot', ['Metric', 'Value'], [
+          ['Inventory items', analytics.currentInventory.itemCount],
+          ['Low stock items', analytics.currentInventory.lowStockCount],
+          ['Out of stock items', analytics.currentInventory.outOfStockCount],
+          ['Expired batches', analytics.currentInventory.expiredBatchCount],
+          ['Near-expiry batches', analytics.currentInventory.expiringBatchCount],
+          ['Limitation', analytics.inventoryNote]
+        ]],
+        ['Near-expiry batches by month', ['Month', 'Batches'], analytics.currentInventory.expiryByMonth.map((row) => [row._id, row.count])],
+        ['Patient flow', [analytics.trendInterval === 'month' ? 'Month' : 'Date', 'Visits'], analytics.patientTrends.map((row) => [row._id, row.count])],
         ['Common diagnoses', ['Diagnosis', 'Cases'], analytics.topDiseases.map((row) => [row._id, row.count])],
         ['Department workload', ['Department', 'Patients', 'Average wait (minutes)'], analytics.departmentWorkload.map((row) => [row._id, row.patientCount, row.avgWaitMinutes == null ? 'Not recorded' : Math.round(row.avgWaitMinutes)])],
         ['Medicine usage', ['Medicine', 'Quantity dispensed', 'Dispenses'], analytics.medicineUsage.map((row) => [row._id, row.quantityDispensed, row.timesDispensed])],
-        ['Staff performance', ['Staff', 'Role', 'Department', 'Patients served', 'Days attended'], analytics.staffPerformance.map((staff) => [staff.name, staff.role, staff.department, staff.patientsServed, staff.attendedDays])],
+        ['Staff performance', ['Staff', 'Role', 'Department', 'Patients served', 'Days attended', 'Avg patients per attended day'], analytics.staffPerformance.map((staff) => [staff.name, staff.role, staff.department, staff.patientsServed, staff.attendedDays, staff.averagePatientsPerAttendedDay ?? 'Not recorded'])],
         ['Submitted department reports', ['Department', 'Title', 'Submitted by', 'Submitted', 'Status'], reports.map((report) => [report.department, report.title, report.submittedBy?.name || report.submittedBy?.username || '', new Date(report.submittedAt).toLocaleString(), report.status])],
       ];
       let cursorY = 36;
@@ -384,55 +464,61 @@ const ReportsAndAnalytics = () => {
   };
 
   const summaryCards = [
-    { label: 'Total patients', value: analytics.summary.totalPatients, icon: Users, color: 'teal' },
+    { label: 'Total visits', value: analytics.summary.totalPatients, icon: Users, color: 'teal' },
     { label: 'Average wait time', value: analytics.summary.avgWaitTime == null ? 'Not recorded' : `${analytics.summary.avgWaitTime} min`, icon: Clock3, color: 'blue' },
     { label: 'Emergency patients', value: analytics.summary.emergencyPatients, icon: AlertTriangle, color: 'rose' },
     { label: 'Medicines dispensed', value: analytics.summary.totalMedicinesDispensed, icon: Pill, color: 'purple' }
   ];
   const cardColors = {
-    teal: { value: 'text-teal-600', icon: 'bg-teal-50 text-teal-600' },
-    blue: { value: 'text-blue-600', icon: 'bg-blue-50 text-blue-600' },
-    rose: { value: 'text-rose-600', icon: 'bg-rose-50 text-rose-600' },
-    purple: { value: 'text-purple-600', icon: 'bg-purple-50 text-purple-600' }
+    teal: { card: 'from-blue-600 to-blue-500', icon: 'bg-white/15 text-white' },
+    blue: { card: 'from-emerald-600 to-green-500', icon: 'bg-white/15 text-white' },
+    rose: { card: 'from-rose-600 to-red-500', icon: 'bg-white/15 text-white' },
+    purple: { card: 'from-violet-600 to-purple-500', icon: 'bg-white/15 text-white' }
   };
 
   return (
-    <div className="min-h-screen space-y-6 bg-slate-50 p-4 sm:p-6">
+    <div className="min-h-screen space-y-4 bg-blue-50/60 p-3 sm:p-4">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><FileBarChart className="text-teal-600" /> Reports &amp; Analytics</h1>
-          <p className="mt-1 text-sm text-slate-500">Review clinic activity recorded across visits, departments, and dispensing logs.</p>
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-blue-900"><FileBarChart className="text-blue-700" /> Reports &amp; Analytics</h1>
+          <p className="mt-1 text-sm text-slate-500">Review aggregate visit volume, service workload, staff attendance, inventory alerts and procurement activity.</p>
         </div>
         <div className="flex flex-wrap gap-2 print:hidden">
-          <button type="button" onClick={exportCsv} disabled={loading} className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50">
-            <Download size={16} /> Export Excel-compatible CSV
+          <button type="button" onClick={() => setActiveTab((current) => current === 'analytics' ? 'department-reports' : 'analytics')} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-50">
+            <FileText size={15} /> {activeTab === 'analytics' ? 'Department Reports' : 'Back to Analytics'}
           </button>
-          <button type="button" onClick={() => void exportPdf()} disabled={loading || exportingPdf} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-            <FileText size={16} /> {exportingPdf ? 'Creating PDF…' : 'Save PDF'}
+          <button type="button" onClick={exportCsv} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+            <Download size={15} /> Export Excel (CSV)
           </button>
-          <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            <Printer size={16} /> Print
+          <button type="button" onClick={() => void exportPdf()} disabled={loading || exportingPdf} className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
+            <FileText size={15} /> {exportingPdf ? 'Creating PDF…' : 'Save PDF'}
+          </button>
+          <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800">
+            <Printer size={15} /> Print
           </button>
         </div>
       </header>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm print:hidden">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="space-y-1 text-xs font-semibold text-slate-600">
-            <span>Date range</span>
-            <select value={preset} onChange={(event) => changePreset(event.target.value)} className="block rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <option value="today">Today</option><option value="week">This week</option><option value="month">This month</option><option value="custom">Custom range</option>
-            </select>
+      <section className="rounded-xl border border-blue-100 bg-white p-3 shadow-sm print:hidden">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-wrap items-center gap-1">
+            {[
+              ['today', 'Today'],
+              ['week', 'This week'],
+              ['month', 'This month'],
+              ['year', 'Last 12 months']
+            ].map(([value, label]) => <button key={value} type="button" onClick={() => changePreset(value)} aria-pressed={preset === value} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${preset === value ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-blue-50'}`}>{label}</button>)}
+            <button type="button" onClick={() => setPreset('custom')} aria-pressed={preset === 'custom'} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${preset === 'custom' ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-blue-50'}`}>Custom range</button>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+            <span>From:</span><span className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2"><input aria-label="Report start date" type="date" value={startDate} onChange={(event) => { setPreset('custom'); setStartDate(event.target.value); }} /></span>
           </label>
-          <label className="space-y-1 text-xs font-semibold text-slate-600">
-            <span>From</span><span className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><CalendarDays size={14} /><input type="date" value={startDate} onChange={(event) => { setPreset('custom'); setStartDate(event.target.value); }} /></span>
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+            <span>To:</span><span className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2"><input aria-label="Report end date" type="date" value={endDate} onChange={(event) => { setPreset('custom'); setEndDate(event.target.value); }} /></span>
           </label>
-          <label className="space-y-1 text-xs font-semibold text-slate-600">
-            <span>To</span><span className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><CalendarDays size={14} /><input type="date" value={endDate} onChange={(event) => { setPreset('custom'); setEndDate(event.target.value); }} /></span>
-          </label>
-          <label className="space-y-1 text-xs font-semibold text-slate-600">
-            <span>Department</span>
-            <select value={department} onChange={(event) => setDepartment(event.target.value)} className="block min-w-40 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+            <span>Department:</span>
+            <select value={department} onChange={(event) => setDepartment(event.target.value)} className="block min-w-36 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <option value="All">All departments</option>
               {analytics.departments.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
             </select>
@@ -443,60 +529,122 @@ const ReportsAndAnalytics = () => {
       {error && <div role="alert" className="flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}<button type="button" onClick={() => void fetchData()} className="font-semibold underline">Retry</button></div>}
       {exportError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{exportError}</p>}
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
         {summaryCards.map(({ label, value, icon: Icon, color }) => (
-          <article key={label} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div><p className="text-xs font-semibold uppercase text-slate-500">{label}</p><p className={`mt-2 text-2xl font-bold ${cardColors[color].value}`}>{loading ? '—' : value}</p></div>
-            <span className={`rounded-xl p-3 ${cardColors[color].icon}`}><Icon size={22} /></span>
+          <article key={label} className={`flex items-center justify-between rounded-xl bg-gradient-to-r ${cardColors[color].card} p-4 text-white shadow-sm`}>
+            <div><p className="text-xs font-semibold">{label}</p><p className="mt-1 text-2xl font-bold">{loading ? '—' : value}</p></div>
+            <span className={`rounded-xl p-2.5 ${cardColors[color].icon}`}><Icon size={23} /></span>
           </article>
         ))}
       </section>
 
-      <nav className="flex gap-2 border-b border-slate-200 print:hidden" aria-label="Report sections">
-        {[['analytics', 'Analytics'], ['department-reports', 'Department Reports']].map(([value, label]) => (
-          <button key={value} type="button" onClick={() => setActiveTab(value)} className={`border-b-2 px-4 py-3 text-sm font-semibold ${activeTab === value ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{label}</button>
-        ))}
-      </nav>
+      {activeTab === 'analytics' && <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <article className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm">
+          <h2 className="flex items-center gap-2 bg-gradient-to-r from-blue-950 to-blue-800 px-3 py-2 text-sm font-bold text-white"><Users size={16} /> Staff Attendance Summary</h2>
+          <div className="p-3">
+          {loading ? <p className="py-6 text-center text-sm text-slate-400">Loading attendance…</p> : (
+            <dl className="grid grid-cols-2 gap-2 text-sm">
+              {[
+                ['Present', analytics.summary.attendance.present, 'text-emerald-700'],
+                ['Late', analytics.summary.attendance.late, 'text-amber-700'],
+                ['Absent', analytics.summary.attendance.absent, 'text-rose-700'],
+                ['Approved leave requests', analytics.summary.attendance.approvedLeaveRequests, 'text-sky-700']
+              ].map(([label, value, color]) => <div key={label} className="rounded-lg border-r border-blue-100 bg-white p-2 text-center last:border-0"><dt className="text-[11px] font-semibold text-slate-600">{label}</dt><dd className={`mt-1 text-lg font-bold ${color}`}>{value}</dd></div>)}
+            </dl>
+          )}
+          <p className="mt-2 border-t border-blue-100 pt-2 text-[11px] text-slate-500">Saved attendance records and approved leave requests in this period; not expected roster totals.</p>
+          </div>
+        </article>
+        <article className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm md:col-span-2">
+          <h2 className="flex items-center gap-2 bg-gradient-to-r from-blue-950 to-blue-800 px-3 py-2 text-sm font-bold text-white"><FileText size={16} /> Requisition History</h2>
+          <div className="p-3">
+          {loading ? <p className="py-6 text-center text-sm text-slate-400">Loading requisitions…</p> : (
+            <>
+              <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                {[
+                  ['Pending', analytics.summary.requisitions.pending, 'text-amber-700'],
+                  ['Approved', analytics.summary.requisitions.approved, 'text-emerald-700'],
+                  ['Rejected', analytics.summary.requisitions.rejected, 'text-rose-700'],
+                  ['Returned', analytics.summary.requisitions.returned, 'text-slate-700']
+                ].map(([label, value, color]) => <div key={label} className="border-r border-blue-100 p-2 text-center last:border-0"><dt className="text-[11px] font-semibold text-slate-600">{label}</dt><dd className={`mt-1 text-lg font-bold ${color}`}>{value}</dd></div>)}
+              </dl>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-blue-100 px-2 pt-2 text-[11px] text-slate-700">
+                <p>Average approval time: <strong>{analytics.summary.requisitions.averageApprovalHours == null ? 'Not recorded' : `${analytics.summary.requisitions.averageApprovalHours} hours`}</strong></p>
+                <p>Estimated costs: <strong>{analytics.summary.requisitions.pendingEstimatedCost.toLocaleString()} ETB pending</strong> · <strong>{analytics.summary.requisitions.approvedEstimatedCost.toLocaleString()} ETB approved</strong></p>
+              </div>
+            </>
+          )}
+          <p className="mt-2 text-[11px] text-slate-500">Request status counts and approval times are based on requests submitted during this period.</p>
+          </div>
+        </article>
+        <article className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm">
+          <h2 className="flex items-center gap-2 bg-gradient-to-r from-blue-950 to-blue-800 px-3 py-2 text-sm font-bold text-white"><Pill size={16} /> Current Inventory &amp; Expiry Outlook</h2>
+          <div className="p-3">
+          {loading ? <p className="py-6 text-center text-sm text-slate-400">Loading stock snapshot…</p> : (
+            <>
+              <dl className="grid grid-cols-2 gap-2 text-sm">
+                {[
+                  ['Low stock', analytics.currentInventory.lowStockCount, 'text-amber-700'],
+                  ['Out of stock', analytics.currentInventory.outOfStockCount, 'text-rose-700'],
+                  ['Expired batches', analytics.currentInventory.expiredBatchCount, 'text-rose-700'],
+                  ['Near expiry', analytics.currentInventory.expiringBatchCount, 'text-orange-700']
+                ].map(([label, value, color]) => <div key={label} className="border-r border-blue-100 p-2 text-center last:border-0"><dt className="text-[11px] font-semibold text-slate-600">{label}</dt><dd className={`mt-1 text-lg font-bold ${color}`}>{value}</dd></div>)}
+              </dl>
+              {analytics.currentInventory.expiryByMonth.length > 0 && <div className="mt-4"><h3 className="mb-3 text-xs font-semibold text-slate-600">Current batches expiring soon by month</h3><BarList rows={analytics.currentInventory.expiryByMonth} nameKey="_id" valueKey="count" /></div>}
+              <p className="mt-2 text-[11px] text-slate-500">{analytics.inventoryNote}</p>
+            </>
+          )}
+          </div>
+        </article>
+        <article className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm md:col-span-2">
+          <h2 className="flex items-center gap-2 bg-gradient-to-r from-blue-950 to-blue-800 px-3 py-2 text-sm font-bold text-white"><BarChart3 size={16} /> Analytics – Department Reports</h2>
+          <div className="grid gap-3 p-3 md:grid-cols-3">
+            <section className="rounded-lg border border-slate-100 p-3">
+              <h3 className="mb-2 flex items-center gap-2 text-xs font-bold text-blue-900"><Activity size={14} /> Patient Flow</h3>
+              {loading ? <p className="py-8 text-center text-xs text-slate-400">Loading visits…</p> : <PatientTrend rows={analytics.patientTrends} interval={analytics.trendInterval} />}
+            </section>
+            <section className="rounded-lg border border-slate-100 p-3">
+              <h3 className="mb-2 flex items-center gap-2 text-xs font-bold text-blue-900"><Activity size={14} /> Common Diagnoses</h3>
+              {loading ? <p className="py-8 text-center text-xs text-slate-400">Loading diagnoses…</p> : <BarList rows={analytics.topDiseases} nameKey="_id" valueKey="count" />}
+            </section>
+            <section className="rounded-lg border border-slate-100 p-3">
+              <h3 className="mb-2 flex items-center gap-2 text-xs font-bold text-blue-900"><Users size={14} /> Department Workload</h3>
+              {loading ? <p className="py-8 text-center text-xs text-slate-400">Loading departments…</p> : <BarList rows={analytics.departmentWorkload} nameKey="_id" valueKey="patientCount" />}
+            </section>
+          </div>
+        </article>
+      </section>}
 
       {activeTab === 'analytics' ? (
-        <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-4 flex items-center gap-2 font-bold text-slate-800"><Activity size={18} className="text-teal-600" /> Patient flow</h2>
-            {loading ? <p className="py-12 text-center text-sm text-slate-400">Loading patient activity…</p> : <PatientTrend rows={analytics.patientTrends} />}
-          </article>
-          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-4 flex items-center gap-2 font-bold text-slate-800"><BarChart3 size={18} className="text-sky-600" /> Common diagnoses</h2>
-            {loading ? <p className="py-12 text-center text-sm text-slate-400">Loading diagnosis data…</p> : <BarList rows={analytics.topDiseases} nameKey="_id" valueKey="count" />}
-          </article>
-          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-4 flex items-center gap-2 font-bold text-slate-800"><Users size={18} className="text-indigo-600" /> Department workload (patients)</h2>
-            {loading ? <p className="py-12 text-center text-sm text-slate-400">Loading department data…</p> : <BarList rows={analytics.departmentWorkload} nameKey="_id" valueKey="patientCount" />}
-          </article>
-          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-4 flex items-center gap-2 font-bold text-slate-800"><Pill size={18} className="text-purple-600" /> Medicine usage (quantity dispensed)</h2>
-            {loading ? <p className="py-12 text-center text-sm text-slate-400">Loading medicine data…</p> : <BarList rows={analytics.medicineUsage} nameKey="_id" valueKey="quantityDispensed" />}
-          </article>
-          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
-            <h2 className="mb-4 flex items-center gap-2 font-bold text-slate-800"><Clock3 size={18} className="text-blue-600" /> Department average wait time</h2>
+        <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <article className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm">
+            <h2 className="flex items-center gap-2 bg-gradient-to-r from-blue-950 to-blue-800 px-3 py-2 text-sm font-bold text-white"><Clock3 size={16} /> Department Average Wait Time</h2>
             {loading ? <p className="py-12 text-center text-sm text-slate-400">Loading department data…</p> : (
-              <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-3">Department</th><th className="p-3">Patients</th><th className="p-3">Average wait</th></tr></thead><tbody className="divide-y divide-slate-100">{analytics.departmentWorkload.length ? analytics.departmentWorkload.map((row) => <tr key={row._id}><td className="p-3 font-semibold">{row._id}</td><td className="p-3">{row.patientCount}</td><td className="p-3">{row.avgWaitMinutes == null ? 'Not recorded' : `${Math.round(row.avgWaitMinutes)} min`}</td></tr>) : <tr><td colSpan="3" className="p-6 text-center text-slate-400">No department visit data recorded.</td></tr>}</tbody></table></div>
+              <div className="overflow-x-auto p-2"><table className="w-full text-left text-xs"><thead className="border-b bg-blue-50 text-[11px] uppercase text-blue-900"><tr><th className="p-2">Department</th><th className="p-2">Patients</th><th className="p-2">Average wait</th></tr></thead><tbody className="divide-y divide-slate-100">{analytics.departmentWorkload.length ? analytics.departmentWorkload.map((row) => <tr key={row._id}><td className="p-2 font-semibold">{row._id}</td><td className="p-2">{row.patientCount}</td><td className="p-2">{row.avgWaitMinutes == null ? 'Not recorded' : `${Math.round(row.avgWaitMinutes)} min`}</td></tr>) : <tr><td colSpan="3" className="p-4 text-center text-slate-500">No department visit data recorded.</td></tr>}</tbody></table></div>
             )}
           </article>
-          <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
-            <h2 className="mb-4 flex items-center gap-2 font-bold text-slate-800"><Users size={18} className="text-indigo-600" /> Staff performance</h2>
+          <article className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm md:col-span-2">
+            <h2 className="flex items-center gap-2 bg-gradient-to-r from-blue-950 to-blue-800 px-3 py-2 text-sm font-bold text-white"><Users size={16} /> Staff Performance</h2>
             {loading ? <p className="py-12 text-center text-sm text-slate-400">Loading staff performance…</p> : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="p-3">Staff member</th><th className="p-3">Role</th><th className="p-3">Department</th><th className="p-3">Patients served</th><th className="p-3">Days attended</th></tr></thead>
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b bg-blue-50 text-[11px] uppercase text-blue-900"><tr><th className="p-2">Staff member</th><th className="p-2">Role</th><th className="p-2">Department</th><th className="p-2">Patients served</th><th className="p-2">Days attended</th><th className="p-2">Avg patients / attended day</th></tr></thead>
                   <tbody className="divide-y divide-slate-100">
                     {analytics.staffPerformance.length ? analytics.staffPerformance.map((staff) => (
-                      <tr key={staff.staffId}><td className="p-3 font-semibold">{staff.name}</td><td className="p-3">{staff.role}</td><td className="p-3">{staff.department}</td><td className="p-3">{staff.patientsServed}</td><td className="p-3">{staff.attendedDays}</td></tr>
-                    )) : <tr><td colSpan="5" className="p-6 text-center text-slate-400">No staff directory records are available for this department.</td></tr>}
+                      <tr key={staff.staffId}><td className="p-2 font-semibold">{staff.name}</td><td className="p-2">{staff.role}</td><td className="p-2">{staff.department}</td><td className="p-2">{staff.patientsServed}</td><td className="p-2">{staff.attendedDays}</td><td className="p-2">{staff.averagePatientsPerAttendedDay == null ? 'Not recorded' : staff.averagePatientsPerAttendedDay}</td></tr>
+                    )) : <tr><td colSpan="6" className="p-6 text-center text-slate-400">No staff directory records are available for this department.</td></tr>}
                   </tbody>
                 </table>
-                <p className="mt-3 text-xs text-slate-400">Patient counts include visits assigned to a staff member. Attendance days count Present and Late records in the selected date range.</p>
+                <p className="mt-3 text-xs text-slate-400">Patient counts include visits assigned to a staff member. Attendance days count Present and Late records. Average workload is patients served divided by recorded attended days.</p>
               </div>
             )}
+          </article>
+          <article className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm md:col-span-3">
+            <h2 className="flex items-center gap-2 bg-gradient-to-r from-blue-950 to-blue-800 px-3 py-2 text-sm font-bold text-white"><Pill size={16} /> Medicine Usage &amp; Consumption</h2>
+            <div className="grid gap-4 p-3 md:grid-cols-2">
+              {loading ? <p className="py-6 text-center text-sm text-slate-400">Loading medicine data…</p> : <BarList rows={analytics.medicineUsage} nameKey="_id" valueKey="quantityDispensed" />}
+              <p className="self-center text-xs text-slate-500">Top medicines dispensed in the selected date range. Consumption counts come from recorded dispensing logs.</p>
+            </div>
           </article>
         </section>
       ) : (

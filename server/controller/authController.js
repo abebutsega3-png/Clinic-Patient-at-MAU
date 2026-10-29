@@ -169,6 +169,45 @@ export const getCurrentUser = async (req, res) => {
   }
 };
 
+export const updateCurrentUserProfile = async (req, res) => {
+  const phoneNumber = typeof req.body.phoneNumber === 'string' ? req.body.phoneNumber.trim() : '';
+  const profileImage = typeof req.body.profileImage === 'string' ? req.body.profileImage : '';
+  const imagePattern = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ success: false, message: 'User profile not found.' });
+    if (
+      phoneNumber.length > 30
+      || (phoneNumber && !/^[+()\d\s-]{6,30}$/.test(phoneNumber))
+      || profileImage.length > 700000
+      || (profileImage && profileImage !== user.profileImage && !imagePattern.test(profileImage))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide a valid phone number and a PNG, JPEG or WebP profile photo smaller than 500 KB.'
+      });
+    }
+
+    user.phoneNumber = phoneNumber;
+    user.profileImage = profileImage;
+    await user.save();
+    await writeAuditEvent({
+      req,
+      action: 'AUTH_PROFILE_UPDATED',
+      details: 'User updated their phone number or profile photo.',
+      entityType: 'user',
+      entityId: user._id
+    });
+    const profile = await User.findById(user._id)
+      .select('name username email phoneNumber alternativePhone role activeRole department position employeeId dateJoined status profileImage createdAt lastLogin')
+      .lean();
+    return res.status(200).json({ success: true, data: profile, message: 'Profile changes saved.' });
+  } catch (error) {
+    console.error('Failed to update current user profile:', error);
+    return res.status(500).json({ success: false, message: 'Unable to save profile changes.' });
+  }
+};
+
 export const changeCurrentUserPassword = async (req, res) => {
   const currentPassword = typeof req.body.currentPassword === 'string' ? req.body.currentPassword : '';
   const newPassword = typeof req.body.newPassword === 'string' ? req.body.newPassword : '';

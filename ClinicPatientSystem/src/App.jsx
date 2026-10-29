@@ -24,7 +24,7 @@ import { useAuth } from './components/context/AuthContext.jsx';
 import ClinicHeadDashboard from './page/ClinicHeadDashboard.jsx';
 import ClinicHeadSidebar from './components/ClinicStudentHead/ClinicHeadSidbar.jsx';
 import ClinicHeadNavbar from './components/ClinicStudentHead/ClinicHeadNavbar.jsx';
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import ApprovalsAndRequests from './components/ClinicStudentHead/clinicheadApprovalsAndRequests.jsx';
 import DutyRoster from './components/ClinicStudentHead/staffmanagmentDutyRoster.jsx';
 import PharmacyAndInventory from './components/ClinicStudentHead/PharmacyAndInventory.jsx';
@@ -40,16 +40,67 @@ import CardRoomRecords from './components/Card Room/CardRoomRecords.jsx';
 import CardRoomReports from './components/Card Room/CardRoomReports.jsx';
 import CardRoomVisits from './components/Card Room/CardRoomVisits.jsx';
 import RequestsAndProcurement from './components/Card Room/RequestsAndProcurement.jsx';
+import DispensaryRoomSidebar from './components/Dispensary Room/Dispensary Room Sidebar.jsx';
+import DispensaryNavbar from './components/Dispensary Room/Dispensary Navbar.jsx';
+import DispensaryDashboard from './components/Dispensary Room/Dispensary Dashboard.jsx';
+
+function DispensaryLayout() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user, token } = useAuth();
+  const location = useLocation();
+  const activeRole = String(user?.activeRole || user?.role || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
+  const allowedRoles = ['pharmacist', 'drug store manager', 'dispensary room'];
+
+  if (!user || !token) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+  if (user.mustChangePassword) {
+    return <Navigate to="/change-password" replace />;
+  }
+  if (!allowedRoles.includes(activeRole)) {
+    return <Navigate to="/" replace />;
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      {sidebarOpen && <button type="button" aria-label="Close navigation menu" className="fixed inset-0 z-20 bg-slate-950/40 lg:hidden" onClick={() => setSidebarOpen(false)} />}
+      <DispensaryRoomSidebar isOpen={sidebarOpen} onNavigate={() => setSidebarOpen(false)} />
+      <div className="min-h-screen lg:pl-64">
+        <DispensaryNavbar onToggleSidebar={() => setSidebarOpen((open) => !open)} />
+        <main className="p-4 sm:p-6 lg:p-8">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function DispensarySection() {
+  const { pathname } = useLocation();
+  const currentPath = pathname.replace(/\/+$/, '');
+  const title = currentPath.split('/').pop().split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+
+  return (
+    <section className="mx-auto max-w-6xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+      <p className="text-sm font-semibold text-orange-700">MAU Clinic · Pharmacy / Dispensary</p>
+      <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
+      <p className="mt-2 text-sm text-slate-600">This dispensary workflow is not connected yet. Use the dashboard for current stock alerts and dispensing activity.</p>
+    </section>
+  );
+}
 
 function ClinicHeadLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {sidebarOpen && <button type="button" aria-label="Close navigation menu" className="fixed inset-0 z-20 bg-slate-950/40 lg:hidden" onClick={() => setSidebarOpen(false)} />}
+      <ClinicHeadNavbar onToggleSidebar={() => setSidebarOpen((current) => !current)} />
+      {sidebarOpen && <button type="button" aria-label="Close navigation menu" className="fixed inset-x-0 bottom-0 top-16 z-20 bg-slate-950/40 lg:hidden" onClick={() => setSidebarOpen(false)} />}
       <ClinicHeadSidebar isOpen={sidebarOpen} onNavigate={() => setSidebarOpen(false)} />
-      <div className="min-h-screen lg:pl-64">
-        <ClinicHeadNavbar onToggleSidebar={() => setSidebarOpen((current) => !current)} />
+      <div className="min-h-screen pt-16 lg:pl-64">
         <main className="p-4 sm:p-6 lg:p-8">
           <Outlet />
         </main>
@@ -137,6 +188,10 @@ function App() {
           <Route path="visits/new" element={<CardRoomVisitRegistration />} />
           <Route path="requests-and-procurement" element={<RequestsAndProcurement />} />
           <Route path="*" element={<CardRoomUnavailable />} />
+        </Route>
+        <Route path="/dispensary" element={<DispensaryLayout />}>
+          <Route index element={<DispensaryDashboard />} />
+          <Route path="*" element={<DispensarySection />} />
         </Route>
       </Routes>
     </>

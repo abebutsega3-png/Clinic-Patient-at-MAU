@@ -6,6 +6,7 @@ import ClinicNotification from '../module/ClinicNotification.js';
 import { Staff, Roster } from '../module/StaffAndRoster.js';
 import User from '../module/User.js';
 import ClinicOperationalSettings from '../module/ClinicOperationalSettings.js';
+import { notifyClinicHeads as createClinicHeadAlert } from '../utils/clinicHeadAlert.js';
 
 const requestTypes = ['leave_request', 'staff_leave', 'purchase_request', 'referral', 'medical_certificate'];
 const statuses = ['pending', 'approved', 'rejected', 'returned'];
@@ -200,15 +201,15 @@ const buildFilters = (queryParams) => {
 };
 
 const notifyClinicHeads = async (request, title, message) => {
-  const clinicHeads = await User.find({ role: 'Clinic Head', status: 'Active' }).select('_id').lean();
-  if (clinicHeads.length) {
-    await ClinicNotification.insertMany(clinicHeads.map(({ _id }) => ({
-      recipient: _id,
-      request: request._id,
-      title,
-      message
-    })));
-  }
+  await createClinicHeadAlert({
+    batchId: `approval-request:${request._id}:${request.updatedAt?.getTime?.() || Date.now()}`,
+    request: request._id,
+    title,
+    message,
+    targetPath: `/clinic-head/approvals?requestId=${request._id}&requestType=${encodeURIComponent(request.requestType)}&recordSource=approval`,
+    notificationType: 'clinic_workflow',
+    priority: request.priority === 'urgent' ? 'urgent' : 'high'
+  });
 };
 
 const getTodayRange = () => {
@@ -431,7 +432,10 @@ export const getApprovalRequestDetails = async (req, res) => {
 };
 
 const createDecisionNotifications = async (request, status) => {
-  const message = `Your ${request.requestType.replaceAll('_', ' ')} request ${status}.`;
+  const reason = status === 'rejected' && request.rejectionReason
+    ? ` Reason: ${request.rejectionReason}`
+    : '';
+  const message = `Your ${request.requestType.replaceAll('_', ' ')} request ${status}.${reason}`;
   const recipients = request.requesterUser ? [String(request.requesterUser)] : [];
   if (!request.requesterUser && request.applicantId) {
     const applicant = await User.findOne({
@@ -911,7 +915,10 @@ export const resubmitApprovalRequest = async (req, res) => {
 
 export const getMyNotifications = async (req, res) => {
   try {
-    const notifications = await ClinicNotification.find({ recipient: req.user._id })
+    const notifications = await ClinicNotification.find({
+      recipient: req.user._id,
+      dismissedAt: null
+    })
       .sort({ createdAt: -1 })
       .limit(20)
       .lean();
@@ -937,6 +944,26 @@ export const markNotificationRead = async (req, res) => {
   } catch (error) {
     console.error('Failed to mark notification as read:', error);
     return res.status(500).json({ success: false, message: 'Unable to update notification.' });
+  }
+};
+
+export const dismissNotification = async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    return res.status(400).json({ success: false, message: 'Invalid notification ID.' });
+  }
+  try {
+    const notification = await ClinicNotification.findOneAndUpdate(
+      { _id: req.params.id, recipient: req.user._id, dismissedAt: null },
+      { $set: { dismissedAt: new Date(), dismissedBy: req.user._id, readAt: new Date() } },
+      { new: true }
+    );
+    if (!notification) {
+      return res.status(404).json({ success: false, message: 'Notification not found or already dismissed.' });
+    }
+    return res.status(200).json({ success: true, data: notification });
+  } catch (error) {
+    console.error('Failed to dismiss clinic notification:', error);
+    return res.status(500).json({ success: false, message: 'Unable to dismiss this notification.' });
   }
 };
 

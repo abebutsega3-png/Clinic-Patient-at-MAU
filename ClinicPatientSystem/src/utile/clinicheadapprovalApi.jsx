@@ -104,3 +104,8 @@ export const markNotificationRead = async (id, token) => {
   const response = await axios.patch(`${API_URL}/notifications/${id}/read`, {}, getAuthHeaders(token));
   return response.data;
 };
+
+export const dismissNotification = async (id, token) => {
+  const response = await axios.delete(`${API_URL}/notifications/${id}`, getAuthHeaders(token));
+  return response.data;
+};

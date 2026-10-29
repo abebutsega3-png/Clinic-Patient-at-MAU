@@ -42,6 +42,22 @@ const clinicOperationalSettingsSchema = new mongoose.Schema({
       afternoon: { type: Number, default: 6, min: 1, max: 24 },
       night: { type: Number, default: 12, min: 1, max: 24 }
     },
+    shiftTimes: {
+      morning: {
+        start: { type: String, default: '06:00' },
+        end: { type: String, default: '14:00' }
+      },
+      afternoon: {
+        start: { type: String, default: '14:00' },
+        end: { type: String, default: '22:00' }
+      },
+      night: {
+        start: { type: String, default: '22:00' },
+        end: { type: String, default: '06:00' }
+      }
+    },
+    gracePeriodMinutes: { type: Number, default: 15, min: 0, max: 240 },
+    lateAlertTriggerMinutes: { type: Number, default: 30, min: 0, max: 1440 },
     minimumStaff: {
       type: [{
         department: { type: String, required: true, trim: true },
@@ -53,6 +69,7 @@ const clinicOperationalSettingsSchema = new mongoose.Schema({
     autoLockApprovedLeave: { type: Boolean, default: true }
   },
   inventoryRules: {
+    defaultThreshold: { type: Number, default: 20, min: 0, max: 1000000 },
     categoryThresholds: {
       type: [{
         category: { type: String, required: true, trim: true },
@@ -60,7 +77,8 @@ const clinicOperationalSettingsSchema = new mongoose.Schema({
       }],
       default: []
     },
-    expiryWarningDays: { type: Number, default: 90, min: 1, max: 1095 }
+    expiryWarningDays: { type: Number, default: 90, min: 1, max: 1095 },
+    alertEmail: { type: String, default: '', trim: true, lowercase: true, maxlength: 160 }
   }
 }, { timestamps: true });
 

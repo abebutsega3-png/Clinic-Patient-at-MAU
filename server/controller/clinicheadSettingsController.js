@@ -30,10 +30,17 @@ const defaultSettings = () => ({
   officialMarks: { signatureDataUrl: '', stampDataUrl: '' },
   rosterRules: {
     shiftDurations: { morning: 6, afternoon: 6, night: 12 },
+    shiftTimes: {
+      morning: { start: '06:00', end: '14:00' },
+      afternoon: { start: '14:00', end: '22:00' },
+      night: { start: '22:00', end: '06:00' }
+    },
+    gracePeriodMinutes: 15,
+    lateAlertTriggerMinutes: 30,
     minimumStaff: [],
     autoLockApprovedLeave: true
   },
-  inventoryRules: { categoryThresholds: [], expiryWarningDays: 90 }
+  inventoryRules: { defaultThreshold: 20, categoryThresholds: [], expiryWarningDays: 90, alertEmail: '' }
 });
 
 const validateSettings = (input) => {
@@ -76,6 +83,14 @@ const validateSettings = (input) => {
   const durations = rosterRules.shiftDurations;
   if (
     !durations || shifts.some((shift) => !finiteNumber(durations[shift], 1, 24))
+    || !rosterRules.shiftTimes
+    || shifts.some((shift) => (
+      !rosterRules.shiftTimes[shift]
+      || !validTime(rosterRules.shiftTimes[shift].start)
+      || !validTime(rosterRules.shiftTimes[shift].end)
+    ))
+    || !finiteNumber(rosterRules.gracePeriodMinutes, 0, 240)
+    || !finiteNumber(rosterRules.lateAlertTriggerMinutes, 0, 1440)
     || typeof rosterRules.autoLockApprovedLeave !== 'boolean'
     || !Array.isArray(rosterRules.minimumStaff)
     || rosterRules.minimumStaff.some((rule) => (
@@ -87,6 +102,12 @@ const validateSettings = (input) => {
 
   if (
     !inventoryRules || !finiteNumber(inventoryRules.expiryWarningDays, 1, 1095)
+    || !finiteNumber(inventoryRules.defaultThreshold, 0, 1000000)
+    || (typeof inventoryRules.alertEmail !== 'string')
+    || (inventoryRules.alertEmail && (
+      inventoryRules.alertEmail.length > 160
+      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inventoryRules.alertEmail)
+    ))
     || !Array.isArray(inventoryRules.categoryThresholds)
     || inventoryRules.categoryThresholds.some((rule) => (
       !rule || typeof rule.category !== 'string' || !rule.category.trim()
@@ -133,12 +154,20 @@ export const updateClinicOperationalSettings = async (req, res) => {
     },
     rosterRules: {
       shiftDurations: Object.fromEntries(shifts.map((shift) => [shift, rosterRules.shiftDurations[shift]])),
+      shiftTimes: Object.fromEntries(shifts.map((shift) => [shift, {
+        start: rosterRules.shiftTimes[shift].start,
+        end: rosterRules.shiftTimes[shift].end
+      }])),
+      gracePeriodMinutes: rosterRules.gracePeriodMinutes,
+      lateAlertTriggerMinutes: rosterRules.lateAlertTriggerMinutes,
       minimumStaff: rosterRules.minimumStaff.map(({ department, shift, count }) => ({ department: department.trim(), shift, count })),
       autoLockApprovedLeave: rosterRules.autoLockApprovedLeave
     },
     inventoryRules: {
+      defaultThreshold: inventoryRules.defaultThreshold,
       categoryThresholds: inventoryRules.categoryThresholds.map(({ category, threshold }) => ({ category: category.trim(), threshold })),
-      expiryWarningDays: inventoryRules.expiryWarningDays
+      expiryWarningDays: inventoryRules.expiryWarningDays,
+      alertEmail: inventoryRules.alertEmail.trim().toLowerCase()
     }
   };
 

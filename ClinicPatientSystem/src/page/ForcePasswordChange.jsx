@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../components/context/AuthContext.jsx';
 
 const ForcePasswordChange = () => {
@@ -8,8 +9,13 @@ const ForcePasswordChange = () => {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [visiblePasswords, setVisiblePasswords] = useState({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const togglePasswordVisibility = (field) => {
+    setVisiblePasswords((current) => ({ ...current, [field]: !current[field] }));
+  };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -53,16 +59,31 @@ const ForcePasswordChange = () => {
         <form onSubmit={submit} className="mt-6 space-y-4">
           <label className="block text-sm font-medium text-slate-700">
             Temporary password
-            <input required type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+            <span className="mt-1.5 flex items-center rounded-lg border border-slate-300 focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-100">
+              <input required type={visiblePasswords.currentPassword ? 'text' : 'password'} autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="min-w-0 flex-1 rounded-l-lg px-3 py-2.5 outline-none" />
+              <button type="button" onClick={() => togglePasswordVisibility('currentPassword')} aria-label={`${visiblePasswords.currentPassword ? 'Hide' : 'Show'} temporary password`} className="px-3 py-2.5 text-slate-500 hover:text-teal-700">
+                {visiblePasswords.currentPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </span>
           </label>
           <label className="block text-sm font-medium text-slate-700">
             New password
-            <input required type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+            <span className="mt-1.5 flex items-center rounded-lg border border-slate-300 focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-100">
+              <input required type={visiblePasswords.newPassword ? 'text' : 'password'} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="min-w-0 flex-1 rounded-l-lg px-3 py-2.5 outline-none" />
+              <button type="button" onClick={() => togglePasswordVisibility('newPassword')} aria-label={`${visiblePasswords.newPassword ? 'Hide' : 'Show'} new password`} className="px-3 py-2.5 text-slate-500 hover:text-teal-700">
+                {visiblePasswords.newPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </span>
             <span className="mt-1 block text-xs font-normal text-slate-500">At least 8 characters, including a letter and a number.</span>
           </label>
           <label className="block text-sm font-medium text-slate-700">
             Confirm new password
-            <input required type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+            <span className="mt-1.5 flex items-center rounded-lg border border-slate-300 focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-100">
+              <input required type={visiblePasswords.confirmPassword ? 'text' : 'password'} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="min-w-0 flex-1 rounded-l-lg px-3 py-2.5 outline-none" />
+              <button type="button" onClick={() => togglePasswordVisibility('confirmPassword')} aria-label={`${visiblePasswords.confirmPassword ? 'Hide' : 'Show'} confirm new password`} className="px-3 py-2.5 text-slate-500 hover:text-teal-700">
+                {visiblePasswords.confirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </span>
           </label>
           {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
           <button disabled={saving || !token} type="submit" className="w-full rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50">

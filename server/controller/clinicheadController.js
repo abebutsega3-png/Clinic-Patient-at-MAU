@@ -7,6 +7,7 @@ import ClinicNotification from '../module/ClinicNotification.js';
 import StaffAttendance from '../module/StaffAttendance.js';
 import { Roster, Staff } from '../module/StaffAndRoster.js';
 import MasterDataRecord from '../module/MasterDataRecord.js';
+import ClinicOperationalSettings from '../module/ClinicOperationalSettings.js';
 import mongoose from 'mongoose';
 
 const staffRoles = [
@@ -42,6 +43,11 @@ const startOfClinicWeek = (date) => {
   const daysSinceMonday = (clinicDate.getUTCDay() + 6) % 7;
   start.setUTCDate(start.getUTCDate() - daysSinceMonday);
   return start;
+};
+
+const startOfClinicMonth = (date, monthOffset = 0) => {
+  const { year, month } = getClinicDateParts(date);
+  return new Date(Date.UTC(Number(year), Number(month) - 1 + monthOffset, 1) - (3 * 60 * 60 * 1000));
 };
 
 const formatDateKey = (date) => {
@@ -100,6 +106,13 @@ export const getClinicHeadDashboardData = async (req, res) => {
     const weekStart = startOfClinicWeek(now);
     const twoWeeksAgo = new Date(weekStart);
     twoWeeksAgo.setUTCDate(twoWeeksAgo.getUTCDate() - 7);
+    const sixMonthsAgo = startOfClinicMonth(now, -5);
+    const currentMonthStart = startOfClinicMonth(now);
+    const previousMonthStart = startOfClinicMonth(now, -1);
+    const inventorySettings = await ClinicOperationalSettings.findOne({ key: 'clinic' })
+      .select('inventoryRules.expiryWarningDays').lean();
+    const expiryWarningDays = inventorySettings?.inventoryRules?.expiryWarningDays || 90;
+    const expiryLimit = new Date(now.getTime() + (expiryWarningDays * 24 * 60 * 60 * 1000));
 
     const [
       staffOnDutyCount,
@@ -108,10 +121,15 @@ export const getClinicHeadDashboardData = async (req, res) => {
       pendingCertificates,
       pendingOtherApprovalCount,
       pendingOtherApprovals,
+      pendingPurchaseApprovalCount,
       pendingMedicalApprovalCount,
       pendingReferralCount,
       pendingLeaveCount,
       todayTotalPatients,
+      patientsInTreatment,
+      averageWaitResult,
+      visitsByDepartment,
+      attendanceStatusCounts,
       activeEmergencyCases,
       emergencyVisitCount,
       hospitalReferralCount,
@@ -122,12 +140,19 @@ export const getClinicHeadDashboardData = async (req, res) => {
       todayAttendanceRecordCount,
       todayRosterOnDutyCount,
       visitsThisWeek,
+      visitsThisSixMonths,
+      visitsThisMonth,
+      previousMonthVisitCount,
+      visitsPreviousMonth,
       visitsForOutbreakAnalysis,
       recentVisits,
       recentApprovals,
       recentCertificates,
       inventoryItemCount,
-      lowStockItems
+      lowStockItems,
+      inventoryExpiryAlerts,
+      inventoryExpiryAlertCount,
+      lateStaffRecords
     ] = await Promise.all([
       User.countDocuments({ role: { $in: staffRoles }, onDutyToday: true }),
       User.countDocuments({ role: { $in: staffRoles } }),
@@ -135,10 +160,33 @@ export const getClinicHeadDashboardData = async (req, res) => {
       MedicalCertificate.find({ status: 'pending' }).sort({ requestDate: -1 }).limit(8).lean(),
       ClinicApproval.countDocuments({ status: 'pending' }),
       ClinicApproval.find({ status: 'pending' }).sort({ createdAt: -1 }).limit(8).lean(),
+      ClinicApproval.countDocuments({ status: 'pending', requestType: 'purchase_request' }),
       ClinicApproval.countDocuments({ status: 'pending', requestType: 'medical_certificate' }),
       ClinicApproval.countDocuments({ status: 'pending', requestType: 'referral' }),
       ClinicApproval.countDocuments({ status: 'pending', requestType: { $in: ['staff_leave', 'leave_request'] } }),
       ClinicVisit.countDocuments({ visitDate: { $gte: todayStart, $lt: tomorrowStart } }),
+      ClinicVisit.countDocuments({
+        visitDate: { $gte: todayStart, $lt: tomorrowStart },
+        status: { $in: ['Registered', 'Waiting', 'Called', 'In Service', 'Routed', 'Sent to Examination'] }
+      }),
+      ClinicVisit.aggregate([
+        { $match: { visitDate: { $gte: todayStart, $lt: tomorrowStart }, waitTimeMinutes: { $type: 'number' } } },
+        { $group: { _id: null, average: { $avg: '$waitTimeMinutes' } } }
+      ]),
+      ClinicVisit.aggregate([
+        { $match: { visitDate: { $gte: currentMonthStart, $lt: tomorrowStart } } },
+        {
+          $group: {
+            _id: { $cond: [{ $eq: [{ $ifNull: ['$department', ''] }, ''] }, 'Unassigned', '$department'] },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { count: -1, _id: 1 } }
+      ]),
+      StaffAttendance.aggregate([
+        { $match: { date: formatDateKey(now) } },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
+      ]),
       ClinicVisit.countDocuments({
         visitDate: { $gte: todayStart, $lt: tomorrowStart },
         $or: [
@@ -175,6 +223,13 @@ export const getClinicHeadDashboardData = async (req, res) => {
       }),
       ClinicVisit.find({ visitDate: { $gte: weekStart, $lt: tomorrowStart } })
         .select('visitDate').lean(),
+      ClinicVisit.find({ visitDate: { $gte: sixMonthsAgo, $lte: now } })
+        .select('visitDate').lean(),
+      ClinicVisit.find({ visitDate: { $gte: currentMonthStart, $lt: tomorrowStart } })
+        .select('visitDate').lean(),
+      ClinicVisit.countDocuments({ visitDate: { $gte: previousMonthStart, $lt: currentMonthStart } }),
+      ClinicVisit.find({ visitDate: { $gte: previousMonthStart, $lt: currentMonthStart } })
+        .select('visitDate').lean(),
       ClinicVisit.find({ visitDate: { $gte: twoWeeksAgo, $lte: now } })
         .select('visitDate diagnosis').lean(),
       ClinicVisit.find({}).sort({ visitDate: -1 }).limit(5)
@@ -185,7 +240,12 @@ export const getClinicHeadDashboardData = async (req, res) => {
         .select('studentName status requestDate').lean(),
       ClinicInventory.countDocuments(),
       ClinicInventory.find({ $expr: { $lte: ['$quantity', '$reorderLevel'] } })
-        .sort({ quantity: 1 }).select('itemName quantity reorderLevel unit').lean()
+        .sort({ quantity: 1 }).select('itemName quantity reorderLevel unit').lean(),
+      ClinicInventory.find({ expiryDate: { $ne: null, $lte: expiryLimit } })
+        .sort({ expiryDate: 1 }).limit(5).select('itemName quantity expiryDate').lean(),
+      ClinicInventory.countDocuments({ expiryDate: { $ne: null, $lte: expiryLimit } }),
+      StaffAttendance.find({ date: formatDateKey(now), status: 'late' })
+        .populate('staffId', 'name role').limit(3).lean()
     ]);
 
     const staffCounts = new Map(staffRoleCounts.map(({ _id, count }) => [_id, count]));
@@ -213,13 +273,20 @@ export const getClinicHeadDashboardData = async (req, res) => {
       })),
       ...pendingOtherApprovals.map((approval) => ({
         _id: approval._id,
-        type: approval.requestType === 'referral'
-          ? 'Referral'
-          : ['staff_leave', 'leave_request'].includes(approval.requestType)
-            ? 'Staff Leave'
-            : 'Medical Certificate',
+        type: approval.requestType === 'purchase_request'
+          ? 'Purchase Request'
+          : approval.requestType === 'referral'
+            ? 'Referral'
+            : ['staff_leave', 'leave_request'].includes(approval.requestType)
+              ? 'Staff Leave'
+              : 'Medical Certificate',
         applicant: approval.applicantName,
-        details: `${approval.applicantId} · ${approval.reason}`,
+        details: approval.requestType === 'purchase_request'
+          ? `${approval.purchase?.itemName || 'Item'} · ${approval.purchase?.quantity || 0} ${approval.purchase?.unit || 'units'}`
+          : `${approval.applicantId} · ${approval.reason}`,
+        itemName: approval.purchase?.itemName || '',
+        amount: approval.purchase?.estimatedCost || 0,
+        requestNumber: approval.requestNumber || '',
         requestDate: approval.createdAt,
         recordType: 'approval'
       }))
@@ -239,6 +306,44 @@ export const getClinicHeadDashboardData = async (req, res) => {
         count
       };
     });
+
+    const monthVisits = new Map();
+    for (const visit of visitsThisSixMonths) {
+      const { year, month } = getClinicDateParts(visit.visitDate);
+      const key = `${year}-${month}`;
+      monthVisits.set(key, (monthVisits.get(key) || 0) + 1);
+    }
+    const monthlyPatientFlow = Array.from({ length: 6 }, (_, index) => {
+      const monthStart = startOfClinicMonth(now, index - 5);
+      const { year, month } = getClinicDateParts(monthStart);
+      const key = `${year}-${month}`;
+      return {
+        month: new Intl.DateTimeFormat('en', { month: 'short', timeZone: clinicTimeZone }).format(monthStart),
+        count: monthVisits.get(key) || 0
+      };
+    });
+    const currentMonthVisits = visitsThisMonth.length;
+    const monthlyVisitChange = previousMonthVisitCount
+      ? Math.round(((currentMonthVisits - previousMonthVisitCount) / previousMonthVisitCount) * 100)
+      : null;
+    const monthWeekFlow = Array.from({ length: 4 }, (_, index) => ({
+      week: `Week ${index + 1}`,
+      count: visitsThisMonth.filter(({ visitDate }) => Math.min(3, Math.floor((Number(getClinicDateParts(visitDate).day) - 1) / 7)) === index).length
+    }));
+    const previousMonthWeekFlow = Array.from({ length: 4 }, (_, index) => ({
+      week: `Week ${index + 1}`,
+      count: visitsPreviousMonth.filter(({ visitDate }) => Math.min(3, Math.floor((Number(getClinicDateParts(visitDate).day) - 1) / 7)) === index).length
+    }));
+
+    const nearExpiryItems = inventoryExpiryAlerts
+      .filter((item) => item.expiryDate <= expiryLimit)
+      .map((item) => ({
+        _id: item._id,
+        itemName: item.itemName,
+        quantity: item.quantity,
+        expiryDate: item.expiryDate,
+        expired: item.expiryDate < now
+      }));
 
     const outbreak = getOutbreakNotice(
       visitsForOutbreakAnalysis.map((visit) => ({
@@ -275,9 +380,15 @@ export const getClinicHeadDashboardData = async (req, res) => {
       success: true,
       metrics: {
         todayTotalPatients,
+        currentMonthVisits,
+        monthlyVisitChange,
+        patientsInTreatment,
+        averageWaitMinutes: averageWaitResult[0]?.average == null ? null : Math.round(averageWaitResult[0].average),
+        attendanceSummary: Object.fromEntries(attendanceStatusCounts.map(({ _id, count }) => [_id, count])),
         staffOnDuty: `${dashboardStaffOnDuty}/${dashboardTotalStaff}`,
         staffBreakdown,
         pendingApprovalsCount: pendingCertificateCount + pendingOtherApprovalCount,
+        pendingPurchaseApprovalCount,
         pendingApprovalsBreakdown: {
           medicalCertificates: pendingCertificateCount + pendingMedicalApprovalCount,
           referrals: pendingReferralCount,
@@ -290,10 +401,21 @@ export const getClinicHeadDashboardData = async (req, res) => {
       },
       pendingApprovalsList: approvals.slice(0, 8),
       patientFlow,
+      monthWeekFlow,
+      previousMonthWeekFlow,
+      monthlyPatientFlow,
+      departmentPatientFlow: visitsByDepartment.map(({ _id, count }) => ({ department: _id, count })),
       recentActivity,
       alerts: {
         lowStock: lowStockItems,
+        nearExpiry: nearExpiryItems,
         inventoryItemCount,
+        nearExpiryCount: inventoryExpiryAlertCount,
+        lateStaff: lateStaffRecords.map((record) => ({
+          name: record.staffId?.name || 'Staff member',
+          role: record.staffId?.role || '',
+          timeIn: record.timeIn
+        })),
         outbreakNotice: outbreak.notice,
         diagnosisRecords: outbreak.diagnosisRecords
       },
@@ -499,13 +621,14 @@ export const createClinicApproval = async (req, res) => {
 };
 
 export const createClinicInventoryItem = async (req, res) => {
-  const { itemName, quantity, reorderLevel, unit = 'units', masterDataId } = req.body;
+  const { itemName, quantity, reorderLevel, unit = 'units', masterDataId, storageLocation = '' } = req.body;
   if (
     (typeof itemName !== 'string' && !masterDataId)
     || (typeof itemName === 'string' && !itemName.trim() && !masterDataId)
     || !Number.isFinite(quantity) || quantity < 0
     || !Number.isFinite(reorderLevel) || reorderLevel < 0
     || typeof unit !== 'string' || !unit.trim()
+    || typeof storageLocation !== 'string' || storageLocation.length > 120
     || (masterDataId && !mongoose.isValidObjectId(masterDataId))
   ) {
     return res.status(400).json({
@@ -531,6 +654,7 @@ export const createClinicInventoryItem = async (req, res) => {
       itemCode: catalogMedicine?.code || '',
       masterDataId: catalogMedicine?._id || null,
       category: catalogMedicine ? 'Medicine' : 'Other',
+      storageLocation: storageLocation.trim(),
       quantity,
       reorderLevel,
       unit: catalogMedicine?.unit || unit.trim()
@@ -544,7 +668,7 @@ export const createClinicInventoryItem = async (req, res) => {
 
 export const updateClinicInventoryItem = async (req, res) => {
   const { id } = req.params;
-  const { quantity, reorderLevel } = req.body;
+  const { quantity, reorderLevel, storageLocation } = req.body;
 
   if (!mongoose.isValidObjectId(id)) {
     return res.status(400).json({ success: false, message: 'Invalid inventory item ID.' });
@@ -552,7 +676,8 @@ export const updateClinicInventoryItem = async (req, res) => {
   if (
     (quantity !== undefined && (!Number.isFinite(quantity) || quantity < 0))
     || (reorderLevel !== undefined && (!Number.isFinite(reorderLevel) || reorderLevel < 0))
-    || (quantity === undefined && reorderLevel === undefined)
+    || (storageLocation !== undefined && (typeof storageLocation !== 'string' || storageLocation.length > 120))
+    || (quantity === undefined && reorderLevel === undefined && storageLocation === undefined)
   ) {
     return res.status(400).json({
       success: false,
@@ -563,7 +688,13 @@ export const updateClinicInventoryItem = async (req, res) => {
   try {
     const item = await ClinicInventory.findByIdAndUpdate(
       id,
-      { $set: { ...(quantity !== undefined && { quantity }), ...(reorderLevel !== undefined && { reorderLevel }) } },
+      {
+        $set: {
+          ...(quantity !== undefined && { quantity }),
+          ...(reorderLevel !== undefined && { reorderLevel }),
+          ...(storageLocation !== undefined && { storageLocation: storageLocation.trim() })
+        }
+      },
       { new: true, runValidators: true }
     );
     if (!item) {

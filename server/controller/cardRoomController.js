@@ -12,6 +12,7 @@ import RolePermission from '../module/RolePermission.js';
 import { Staff } from '../module/StaffAndRoster.js';
 import User from '../module/User.js';
 import { writeAuditEvent } from '../utils/auditLogger.js';
+import { notifyEmergencyQueueArrival } from '../services/inventoryAlertService.js';
 
 const clinicTimeZone = 'Africa/Addis_Ababa';
 const validCategories = new Set(['Student', 'Staff', 'Other Authorized Patient']);
@@ -698,6 +699,15 @@ export const createCardRoomVisit = async (req, res) => {
         isEmergency: emergency,
         createdBy: req.user._id,
       });
+      let emergencyNotificationWarning = '';
+      if (emergency) {
+        try {
+          await notifyEmergencyQueueArrival(queue);
+        } catch (notificationError) {
+          console.error('Emergency queue registration succeeded, but Clinic Head notification failed:', notificationError);
+          emergencyNotificationWarning = 'Emergency visit was registered, but the Clinic Head notification could not be created.';
+        }
+      }
       const auditRecorded = await writeCardRoomAudit(
         req,
         'CARD_ROOM_VISIT_REGISTERED',
@@ -713,6 +723,7 @@ export const createCardRoomVisit = async (req, res) => {
           : 'Visit registered and added to the Card Room queue.',
         data: { visit, queue },
         auditRecorded,
+        ...(emergencyNotificationWarning ? { warning: emergencyNotificationWarning } : {}),
       });
     } catch (queueError) {
       await ClinicVisit.deleteOne({ _id: visit._id });

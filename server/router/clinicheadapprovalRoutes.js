@@ -6,6 +6,7 @@ import {
   getApprovalRequestDetails,
   getApprovalRequests,
   getMyNotifications,
+  dismissNotification,
   markNotificationRead,
   updatePurchasePriority,
   receivePurchaseRequest,
@@ -21,6 +22,7 @@ router.post('/bulk-approve', verifyUser, isClinicHead, bulkApproveRequests);
 router.get('/mine', verifyUser, getMyDepartmentRequests);
 router.get('/notifications', verifyUser, getMyNotifications);
 router.patch('/notifications/:id/read', verifyUser, markNotificationRead);
+router.delete('/notifications/:id', verifyUser, dismissNotification);
 router.patch('/:id/priority', verifyUser, isClinicHead, updatePurchasePriority);
 router.patch('/:id/fulfillment', verifyUser, receivePurchaseRequest);
 router.get('/:id', verifyUser, isClinicHead, getApprovalRequestDetails);

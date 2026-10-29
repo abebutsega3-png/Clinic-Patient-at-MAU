@@ -60,6 +60,8 @@ export default function LoginPage() {
         navigate('/clinic-head', { replace: true });
       } else if (role.includes('admin')) {
         navigate('/admin', { replace: true });
+      } else if (['pharmacist', 'drug store manager', 'dispensary room'].includes(role)) {
+        navigate('/dispensary', { replace: true });
       } else if (result.user.department) {
         navigate('/purchase-requests', { replace: true });
       } else {

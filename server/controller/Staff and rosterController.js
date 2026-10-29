@@ -7,6 +7,7 @@ import User from '../module/User.js';
 import Department from '../module/Department.js';
 import RolePermission from '../module/RolePermission.js';
 import ClinicOperationalSettings from '../module/ClinicOperationalSettings.js';
+import { notifyClinicHeads } from '../utils/clinicHeadAlert.js';
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const normalizeRoleName = (value) => value.trim().toLowerCase();
@@ -39,7 +40,7 @@ const getActiveStaffRoles = async () => {
   return staffRoles;
 };
 
-const findStaffMembers = async ({ department, role, search, status, includeStudents = false } = {}) => {
+export const findStaffMembers = async ({ department, role, search, status, includeStudents = false } = {}) => {
   const activeRoles = (await getActiveStaffRoles()).filter((staffRole) => (
     includeStudents || normalizeRoleName(staffRole.roleName) !== 'student'
   ));
@@ -409,7 +410,7 @@ export const saveTodayAttendance = async (req, res) => {
 
     const date = getClinicDate();
     const staffIds = [...new Set(attendanceUpdates.map((item) => item.staffId))];
-    const [leaveEntries, scheduledEntries] = await Promise.all([
+    const [leaveEntries, scheduledEntries, operationalSettings] = await Promise.all([
       Roster.find({
         staffId: { $in: staffIds },
         date,
@@ -419,10 +420,14 @@ export const saveTodayAttendance = async (req, res) => {
         staffId: { $in: staffIds },
         date,
         shift: { $in: ['morning', 'afternoon', 'night'] }
-      }).select('staffId').lean()
+      }).select('staffId shift').lean(),
+      ClinicOperationalSettings.findOne({ key: 'clinic' })
+        .select('rosterRules.shiftTimes rosterRules.gracePeriodMinutes rosterRules.lateAlertTriggerMinutes')
+        .lean()
     ]);
     const leaveStaffIds = new Set(leaveEntries.map((entry) => String(entry.staffId)));
     const scheduledStaffIds = new Set(scheduledEntries.map((entry) => String(entry.staffId)));
+    const shiftByStaffId = new Map(scheduledEntries.map((entry) => [String(entry.staffId), entry.shift]));
     if (attendanceUpdates.some((item) => (
       !leaveStaffIds.has(item.staffId)
       && !scheduledStaffIds.has(item.staffId)
@@ -440,30 +445,81 @@ export const saveTodayAttendance = async (req, res) => {
     const clearIds = eligibleUpdates
       .filter((item) => item.status === 'unrecorded')
       .map((item) => item.staffId);
-    const operations = updates.map((item) => ({
+    const gracePeriodMinutes = operationalSettings?.rosterRules?.gracePeriodMinutes ?? 15;
+    const lateAlertTriggerMinutes = operationalSettings?.rosterRules?.lateAlertTriggerMinutes ?? 30;
+    const shiftTimes = operationalSettings?.rosterRules?.shiftTimes || {};
+    const alertableAttendance = [];
+    const operations = updates.map((item) => {
+      let status = item.status;
+      if (status === 'present' && item.timeIn) {
+        const shiftStart = shiftTimes[shiftByStaffId.get(item.staffId)]?.start;
+        if (shiftStart) {
+          const [startHour, startMinute] = shiftStart.split(':').map(Number);
+          const [inHour, inMinute] = item.timeIn.split(':').map(Number);
+          const startAt = startHour * 60 + startMinute;
+          let timeInAt = inHour * 60 + inMinute;
+          if (startAt >= 12 * 60 && timeInAt < 12 * 60) timeInAt += 24 * 60;
+          if (timeInAt > startAt + gracePeriodMinutes) status = 'late';
+        }
+      }
+
+      let lateAlertTriggered = false;
+      if (status === 'late' && item.timeIn) {
+        const shiftStart = shiftTimes[shiftByStaffId.get(item.staffId)]?.start;
+        if (shiftStart) {
+          const [startHour, startMinute] = shiftStart.split(':').map(Number);
+          const [inHour, inMinute] = item.timeIn.split(':').map(Number);
+          const startAt = startHour * 60 + startMinute;
+          let timeInAt = inHour * 60 + inMinute;
+          if (startAt >= 12 * 60 && timeInAt < 12 * 60) timeInAt += 24 * 60;
+          lateAlertTriggered = timeInAt > startAt + gracePeriodMinutes + lateAlertTriggerMinutes;
+        }
+      }
+
+      if (status === 'absent' || lateAlertTriggered) {
+        const staff = staffById.get(item.staffId);
+        alertableAttendance.push({
+          batchId: `staff-attendance:${date}:${item.staffId}:${status}`,
+          title: status === 'late' ? 'Staff member arrived late' : 'Staff member marked absent',
+          message: `${staff?.name || 'A staff member'} in ${staff?.department || 'an unlisted department'} was marked ${status}${item.timeIn ? ` at ${item.timeIn}` : ''}${item.note?.trim() ? `. Note: ${item.note.trim()}` : '.'}`,
+          targetPath: `/clinic-head/staff?staff=${encodeURIComponent(staff?.name || '')}`,
+          priority: status === 'absent' ? 'urgent' : 'high'
+        });
+      }
+
+      return {
       updateOne: {
         filter: { staffId: item.staffId, date },
         update: {
           $set: {
-            status: item.status,
-            timeIn: item.status === 'absent' ? '' : item.timeIn || '',
-            timeOut: item.status === 'absent' ? '' : item.timeOut || '',
+            status,
+            timeIn: status === 'absent' ? '' : item.timeIn || '',
+            timeOut: status === 'absent' ? '' : item.timeOut || '',
             note: item.note?.trim() || '',
             recordedBy: req.user._id
           }
         },
         upsert: true
       }
-    }));
+      };
+    });
 
     if (operations.length) await StaffAttendance.bulkWrite(operations);
     const deleteResult = clearIds.length
       ? await StaffAttendance.deleteMany({ staffId: { $in: clearIds }, date })
       : { deletedCount: 0 };
+    let notificationWarning = '';
+    try {
+      await Promise.all(alertableAttendance.map((alert) => notifyClinicHeads(alert)));
+    } catch (notificationError) {
+      console.error('Attendance saved, but Clinic Head alert delivery failed:', notificationError);
+      notificationWarning = 'Attendance was saved, but one or more Clinic Head alerts could not be created.';
+    }
     const affectedCount = operations.length + deleteResult.deletedCount;
     return res.status(200).json({
       success: true,
       message: `Attendance saved for ${affectedCount} staff member${affectedCount === 1 ? '' : 's'}.`,
+      ...(notificationWarning ? { warning: notificationWarning } : {}),
       savedCount: operations.length,
       clearedCount: deleteResult.deletedCount,
       skippedLeaveCount: attendanceUpdates.length - eligibleUpdates.length

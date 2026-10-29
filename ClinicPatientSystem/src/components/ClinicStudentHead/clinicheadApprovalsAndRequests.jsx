@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   CalendarDays,
@@ -152,6 +153,7 @@ const openPrintableDocument = (request, type) => {
 
 const ApprovalsAndRequests = () => {
   const { token, user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('leave_request');
   const [filterStatus, setFilterStatus] = useState('pending');
   const [department, setDepartment] = useState('');
@@ -174,6 +176,28 @@ const ApprovalsAndRequests = () => {
   const [saving, setSaving] = useState(false);
   const [requestFormOpen, setRequestFormOpen] = useState(false);
   const [requestForm, setRequestForm] = useState(getInitialRequestForm);
+  const deepLinkedRequestId = searchParams.get('requestId') || '';
+  const deepLinkedRecordSource = searchParams.get('recordSource') || 'approval';
+
+  useEffect(() => {
+    if (!deepLinkedRequestId || !token) return undefined;
+    let active = true;
+    fetchApprovalRequestDetails(deepLinkedRequestId, token, deepLinkedRecordSource)
+      .then((result) => {
+        if (active) setDetails(result.data);
+      })
+      .catch((loadError) => {
+        if (!active) return;
+        console.error('Failed to open linked approval request:', loadError);
+        setError(loadError.response?.data?.message || 'Unable to load the linked request details.');
+      })
+      .finally(() => {
+        if (active) setDetailsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [deepLinkedRequestId, deepLinkedRecordSource, token]);
 
   useEffect(() => {
     let active = true;

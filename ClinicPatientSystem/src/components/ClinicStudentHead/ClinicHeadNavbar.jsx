@@ -12,9 +12,15 @@ import {
   Calendar,
   Menu,
   Stethoscope,
-  CheckCircle2
+  CheckCircle2,
+  Eye,
+  Trash2
 } from 'lucide-react';
-import { fetchMyNotifications, markNotificationRead } from '../../utile/clinicheadapprovalApi.jsx';
+import {
+  dismissNotification,
+  fetchMyNotifications,
+  markNotificationRead
+} from '../../utile/clinicheadapprovalApi.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const ClinicHeadNavbar = ({ onToggleSidebar }) => {
@@ -115,18 +121,34 @@ const ClinicHeadNavbar = ({ onToggleSidebar }) => {
         setNotificationError(error.response?.data?.message || 'Unable to mark this notification as read.');
       }
     }
-    if (notification.departmentReport) {
-      setNotificationsOpen(false);
-      navigate('/clinic-head/reports');
+    setNotificationsOpen(false);
+    if (notification.targetPath?.startsWith('/clinic-head/')) {
+      navigate(notification.targetPath);
+    } else if (notification.departmentReport) navigate('/clinic-head/reports');
+    else if (notification.request) navigate('/clinic-head/approvals');
+    else if (/inventory|stock|expiry/i.test(`${notification.title} ${notification.message}`)) navigate('/clinic-head/inventory');
+    else if (/staff|attendance|no-show|late/i.test(`${notification.title} ${notification.message}`)) navigate('/clinic-head/staff');
+    else if (/emergency|queue|patient/i.test(`${notification.title} ${notification.message}`)) navigate('/clinic-head');
+  };
+
+  const handleDismissNotification = async (event, notification) => {
+    event.stopPropagation();
+    try {
+      await dismissNotification(notification._id, token);
+      setNotifications((current) => current.filter((item) => item._id !== notification._id));
+      setNotificationError('');
+    } catch (dismissError) {
+      console.error('Failed to dismiss notification:', dismissError);
+      setNotificationError(dismissError.response?.data?.message || 'Unable to dismiss this notification.');
     }
   };
   const isAmharic = language === 'am';
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 w-full items-center justify-between border-b border-slate-200 bg-teal-700 px-4 text-white shadow-sm sm:px-6">
+    <header className="fixed inset-x-0 top-0 z-40 flex h-16 w-full items-center justify-between border-b border-blue-900 bg-gradient-to-r from-blue-800 to-blue-700 px-4 text-white shadow-md sm:px-6">
       
       {/* Left Section: Sidebar Toggle & Welcome Message */}
-      <div className="flex items-center gap-3 sm:gap-4">
+      <div className="flex min-w-0 items-center gap-3 sm:gap-4">
         {/* Mobile / Responsive Sidebar Toggle Button */}
         <button
           type="button"
@@ -137,15 +159,14 @@ const ClinicHeadNavbar = ({ onToggleSidebar }) => {
           <Menu size={20} />
         </button>
 
-        {/* Dynamic Welcome Greeting */}
-        <div className="flex flex-col">
-          <h2 className="text-sm sm:text-base font-bold tracking-wide text-white flex items-center gap-2">
-            <span>{isAmharic ? 'እንኳን ደህና መጡ፣' : 'Welcome back,'}</span>
-            <span className="text-teal-200">{user?.name || user?.username || ''}</span>
-          </h2>
-          <p className="hidden md:block text-[11px] text-teal-100 font-normal">
-            {isAmharic ? 'የክሊኒክ አስተዳደር እና ቁጥጥር' : 'Clinic Operational Overview'}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/40 bg-white text-blue-800 shadow-sm">
+            <Stethoscope size={21} />
+          </div>
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-bold tracking-wide text-white sm:text-base">MAU Clinic Management System</h2>
+            <p className="hidden text-[11px] font-medium text-blue-100 sm:block">Motherhood University · Clinic Student Head</p>
+          </div>
         </div>
       </div>
 
@@ -153,8 +174,8 @@ const ClinicHeadNavbar = ({ onToggleSidebar }) => {
       <div className="flex items-center gap-2 sm:gap-4">
 
         {/* Date Display */}
-        <div className="hidden lg:flex items-center gap-1.5 text-xs font-medium text-teal-100 bg-teal-800/50 px-3 py-1.5 rounded-full border border-teal-600/50">
-          <Calendar size={14} className="text-teal-300" />
+        <div className="hidden lg:flex items-center gap-1.5 text-xs font-medium text-blue-100 bg-blue-950/30 px-3 py-1.5 rounded-full border border-blue-300/30">
+          <Calendar size={14} className="text-blue-200" />
           <span>{new Intl.DateTimeFormat(isAmharic ? 'am-ET' : 'en-US', { dateStyle: 'medium', timeZone: 'Africa/Addis_Ababa' }).format(currentDate)}</span>
         </div>
 
@@ -220,18 +241,34 @@ const ClinicHeadNavbar = ({ onToggleSidebar }) => {
               <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto">
                 {notificationError && <p role="alert" className="p-3 text-xs text-rose-600">{notificationError}</p>}
                 {notificationsLoading ? <p className="p-5 text-center text-xs text-slate-500">{isAmharic ? 'በመጫን ላይ…' : 'Loading notifications…'}</p> : notifications.length ? notifications.map((item) => (
-                  <button
-                    type="button"
+                  <article
                     key={item._id}
-                    onClick={() => handleNotificationClick(item)}
-                    className={`block w-full p-3 text-left text-xs transition hover:bg-slate-50/80 ${!item.readAt ? 'bg-teal-50/30' : ''}`}
+                    className={`p-3 text-xs transition ${!item.readAt ? 'bg-teal-50/30' : ''}`}
                   >
-                    <div className="flex items-center justify-between font-semibold text-slate-800">
+                    <div className="flex items-start justify-between gap-2 font-semibold text-slate-800">
                       <span>{item.title}</span>
-                      <span className="text-[10px] text-slate-400 font-normal">{new Date(item.createdAt).toLocaleString()}</span>
+                      <span className="shrink-0 text-[10px] text-slate-400 font-normal">{new Date(item.createdAt).toLocaleString()}</span>
                     </div>
-                    <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">{item.message}</p>
-                  </button>
+                    <p className="mt-1 line-clamp-3 text-[11px] text-slate-500">{item.message}</p>
+                    <div className="mt-2 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleNotificationClick(item)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-2.5 py-1.5 text-[11px] font-semibold text-teal-700 hover:bg-teal-100"
+                        aria-label={`${isAmharic ? 'ማሳወቂያን ይመልከቱ' : 'View notification'}: ${item.title}`}
+                      >
+                        <Eye size={13} /> {isAmharic ? 'ተመልከት' : 'View'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => void handleDismissNotification(event, item)}
+                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-slate-500 hover:bg-rose-50 hover:text-rose-700"
+                        aria-label={`${isAmharic ? 'ማሳወቂያን ያስወግዱ' : 'Dismiss notification'}: ${item.title}`}
+                      >
+                        <Trash2 size={13} /> {isAmharic ? 'አስወግድ' : 'Dismiss'}
+                      </button>
+                    </div>
+                  </article>
                 )) : (
                   <p className="p-5 text-center text-xs text-slate-500">{isAmharic ? 'ማሳወቂያ የለም።' : 'No notifications yet.'}</p>
                 )}
@@ -249,7 +286,7 @@ const ClinicHeadNavbar = ({ onToggleSidebar }) => {
             aria-expanded={profileOpen}
             aria-label={isAmharic ? 'የመገለጫ ምናሌ' : 'Profile menu'}
           >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-950 font-bold text-teal-300 text-xs shadow-inner overflow-hidden">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-950 font-bold text-blue-200 text-xs shadow-inner overflow-hidden">
               {user?.profileImage ? (
                 <img src={user.profileImage} alt="Profile" className="h-full w-full object-cover" />
               ) : (
@@ -260,7 +297,7 @@ const ClinicHeadNavbar = ({ onToggleSidebar }) => {
               <p className="max-w-[130px] truncate text-xs font-bold leading-tight">
                 {user?.name || user?.username || ''}
               </p>
-              <p className="text-[10px] text-teal-200 capitalize leading-tight">
+              <p className="text-[10px] text-blue-100 capitalize leading-tight">
                 {user?.role ? user.role.replace('_', ' ') : ''}
               </p>
             </div>

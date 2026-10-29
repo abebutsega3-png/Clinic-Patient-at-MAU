@@ -4,7 +4,12 @@ import ClinicDispensingLog from '../module/ClinicDispensingLog.js';
 import ClinicDepartmentReport from '../module/ClinicDepartmentReport.js';
 import ClinicNotification from '../module/ClinicNotification.js';
 import StaffAttendance from '../module/StaffAttendance.js';
-import { Staff } from '../module/StaffAndRoster.js';
+import Department from '../module/Department.js';
+import { Queue } from '../module/AdminDashboardModels.js';
+import { findStaffMembers } from './Staff and rosterController.js';
+import ClinicInventory from '../module/ClinicInventory.js';
+import ApprovalRequest from '../module/ClinicheadApproval.js';
+import ClinicOperationalSettings from '../module/ClinicOperationalSettings.js';
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -43,9 +48,29 @@ export const getAnalyticsData = async (req, res) => {
 
   try {
     const visitMatch = buildMatch(range, department);
+    const trendInterval = range.start && range.end
+      && (range.end.getTime() - range.start.getTime()) / 86400000 > 62
+      ? 'month'
+      : 'day';
+    const trendDateFormat = trendInterval === 'month' ? '%Y-%m' : '%Y-%m-%d';
     const dispensingMatch = {};
     if (range.start || range.end) dispensingMatch.dispensedAt = { $gte: range.start, $lte: range.end };
     if (department !== 'All') dispensingMatch.department = department;
+    const queueWaitMatch = {
+      ...(range.start || range.end ? { arrivedAt: { $gte: range.start, $lte: range.end } } : {}),
+      ...(department !== 'All' ? { department } : {}),
+      status: { $in: ['in_progress', 'completed'] },
+      inProgressAt: { $type: 'date' },
+      $expr: { $gte: ['$inProgressAt', '$arrivedAt'] }
+    };
+    const requestMatch = { requestType: 'purchase_request' };
+    if (range.start || range.end) requestMatch.createdAt = { $gte: range.start, $lte: range.end };
+    if (department !== 'All') {
+      requestMatch.$or = [
+        { department },
+        { 'purchase.requesterDepartment': department }
+      ];
+    }
 
     const [
       summaryRows,
@@ -54,10 +79,16 @@ export const getAnalyticsData = async (req, res) => {
       departmentWorkload,
       medicineUsage,
       departments,
-      staffDepartments,
+      configuredDepartments,
       staffDirectory,
-      staffAttendance,
-      staffPatients
+      staffPatients,
+      queueWaitSummary,
+      departmentWaitRows,
+      dispensingLogCount,
+      leaveRequestCount,
+      requisitionSummary,
+      inventoryItems,
+      inventorySettings
     ] = await Promise.all([
       ClinicVisit.aggregate([
         { $match: visitMatch },
@@ -65,8 +96,7 @@ export const getAnalyticsData = async (req, res) => {
           $group: {
             _id: null,
             totalPatients: { $sum: 1 },
-            emergencyPatients: { $sum: { $cond: ['$emergency', 1, 0] } },
-            avgWaitMinutes: { $avg: '$waitTimeMinutes' }
+            emergencyPatients: { $sum: { $cond: ['$emergency', 1, 0] } }
           }
         }
       ]),
@@ -74,7 +104,7 @@ export const getAnalyticsData = async (req, res) => {
         { $match: visitMatch },
         {
           $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d', date: '$visitDate', timezone: 'Africa/Addis_Ababa' } },
+            _id: { $dateToString: { format: trendDateFormat, date: '$visitDate', timezone: 'Africa/Addis_Ababa' } },
             count: { $sum: 1 }
           }
         },
@@ -91,8 +121,7 @@ export const getAnalyticsData = async (req, res) => {
         {
           $group: {
             _id: '$department',
-            patientCount: { $sum: 1 },
-            avgWaitMinutes: { $avg: '$waitTimeMinutes' }
+            patientCount: { $sum: 1 }
           }
         },
         { $sort: { patientCount: -1, _id: 1 } }
@@ -110,22 +139,107 @@ export const getAnalyticsData = async (req, res) => {
         { $limit: 10 }
       ]),
       ClinicVisit.distinct('department', { department: { $nin: ['', null] } }),
-      Staff.distinct('department', { department: { $nin: ['', null] } }),
-      Staff.find(department !== 'All' ? { department } : {}).select('name role department').sort({ name: 1 }).lean(),
+      Department.find({
+        $or: [{ status: 'Active' }, { status: { $exists: false } }]
+      }).select('name').sort({ name: 1 }).lean(),
+      findStaffMembers({
+        ...(department !== 'All' ? { department } : {}),
+        includeStudents: true
+      }).then((members) => members.filter((staff) => staff.status !== 'Inactive')),
+      ClinicVisit.aggregate([
+        {
+          $match: {
+            ...visitMatch,
+            status: 'Completed',
+            attendedByStaffId: { $ne: null }
+          }
+        },
+        { $group: { _id: '$attendedByStaffId', patientsServed: { $sum: 1 } } }
+      ]),
+      Queue.aggregate([
+        { $match: queueWaitMatch },
+        {
+          $group: {
+            _id: null,
+            count: { $sum: 1 },
+            avgWaitMinutes: {
+              $avg: { $divide: [{ $subtract: ['$inProgressAt', '$arrivedAt'] }, 60000] }
+            }
+          }
+        }
+      ]),
+      Queue.aggregate([
+        { $match: queueWaitMatch },
+        {
+          $group: {
+            _id: '$department',
+            count: { $sum: 1 },
+            avgWaitMinutes: {
+              $avg: { $divide: [{ $subtract: ['$inProgressAt', '$arrivedAt'] }, 60000] }
+            }
+          }
+        }
+      ]),
+      ClinicDispensingLog.countDocuments(dispensingMatch),
+      ApprovalRequest.countDocuments({
+        requestType: { $in: ['leave_request', 'staff_leave'] },
+        status: 'approved',
+        ...(range.start || range.end ? {
+          'leave.startDate': { $lte: range.end },
+          'leave.endDate': { $gte: range.start }
+        } : {}),
+        ...(department !== 'All' ? { department } : {})
+      }),
+      ApprovalRequest.aggregate([
+        { $match: requestMatch },
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 },
+            estimatedCost: { $sum: { $ifNull: ['$purchase.estimatedCost', 0] } },
+            totalApprovalHours: {
+              $sum: {
+                $cond: [
+                  { $and: [{ $eq: ['$status', 'approved'] }, { $ne: ['$approvedAt', null] }] },
+                  { $divide: [{ $subtract: ['$approvedAt', '$createdAt'] }, 3600000] },
+                  0
+                ]
+              }
+            },
+            approvedCount: {
+              $sum: {
+                $cond: [
+                  { $and: [{ $eq: ['$status', 'approved'] }, { $ne: ['$approvedAt', null] }] },
+                  1,
+                  0
+                ]
+              }
+            }
+          }
+        }
+      ]),
+      ClinicInventory.find().select('itemName category quantity reorderLevel batches expiryDate').lean(),
+      ClinicOperationalSettings.findOne({ key: 'clinic' }).select('inventoryRules').lean()
+    ]);
+
+    const staffIds = staffDirectory.map((staff) => staff._id);
+    const attendanceMatch = {
+      ...(range.start || range.end ? { date: { $gte: startDate, $lte: endDate } } : {}),
+      ...(department !== 'All' ? { staffId: { $in: staffIds } } : {})
+    };
+    const [staffAttendance, attendanceSummary] = await Promise.all([
       StaffAttendance.aggregate([
         {
           $match: {
-            ...(range.start || range.end ? {
-              date: { $gte: startDate, $lte: endDate }
-            } : {}),
+            ...attendanceMatch,
             status: { $in: ['present', 'late'] }
           }
         },
         { $group: { _id: '$staffId', attendedDays: { $sum: 1 } } }
       ]),
-      ClinicVisit.aggregate([
-        { $match: { ...visitMatch, attendedByStaffId: { $ne: null } } },
-        { $group: { _id: '$attendedByStaffId', patientsServed: { $sum: 1 } } }
+      StaffAttendance.aggregate([
+        { $match: attendanceMatch },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
       ])
     ]);
 
@@ -136,29 +250,119 @@ export const getAnalyticsData = async (req, res) => {
     ]);
     const attendanceByStaff = new Map(staffAttendance.map((entry) => [String(entry._id), entry.attendedDays]));
     const patientsByStaff = new Map(staffPatients.map((entry) => [String(entry._id), entry.patientsServed]));
+    const attendanceCounts = Object.fromEntries(attendanceSummary.map(({ _id, count }) => [_id, count]));
     const staffPerformance = staffDirectory.map((staff) => ({
       staffId: staff._id,
       name: staff.name,
       role: staff.role,
       department: staff.department,
       patientsServed: patientsByStaff.get(String(staff._id)) || 0,
-      attendedDays: attendanceByStaff.get(String(staff._id)) || 0
+      attendedDays: attendanceByStaff.get(String(staff._id)) || 0,
+      averagePatientsPerAttendedDay: attendanceByStaff.get(String(staff._id))
+        ? Number(((patientsByStaff.get(String(staff._id)) || 0) / attendanceByStaff.get(String(staff._id))).toFixed(1))
+        : null
     }));
+    const requisitions = Object.fromEntries(requisitionSummary.map(({ _id, count }) => [_id, count]));
+    const estimatedCostByStatus = Object.fromEntries(requisitionSummary.map(({ _id, estimatedCost }) => [_id, estimatedCost || 0]));
+    const approvedRequisitions = requisitionSummary.reduce((total, row) => total + (row.approvedCount || 0), 0);
+    const totalApprovalHours = requisitionSummary.reduce((total, row) => total + (row.totalApprovalHours || 0), 0);
+    const expiryWarningDays = inventorySettings?.inventoryRules?.expiryWarningDays || 90;
+    const clinicDateParts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Addis_Ababa',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(new Date()).map(({ type, value }) => [type, value]));
+    const clinicToday = new Date(`${clinicDateParts.year}-${clinicDateParts.month}-${clinicDateParts.day}T00:00:00+03:00`);
+    const expiryLimit = new Date(clinicToday.getTime() + expiryWarningDays * 86400000);
+    const categoryThresholds = new Map(
+      (inventorySettings?.inventoryRules?.categoryThresholds || [])
+        .map(({ category, threshold }) => [category.trim().toLocaleLowerCase(), threshold])
+    );
+    const defaultThreshold = inventorySettings?.inventoryRules?.defaultThreshold ?? 20;
+    const currentInventory = {
+      itemCount: inventoryItems.length,
+      lowStockCount: inventoryItems.filter((item) => {
+        const threshold = categoryThresholds.get(String(item.category || '').trim().toLocaleLowerCase())
+          ?? defaultThreshold
+          ?? Number(item.reorderLevel);
+        return Number(item.quantity) > 0 && Number(item.quantity) <= threshold;
+      }).length,
+      outOfStockCount: inventoryItems.filter((item) => Number(item.quantity) <= 0).length,
+      expiredBatchCount: 0,
+      expiringBatchCount: 0,
+      expiryByMonth: []
+    };
+    const expiryByMonth = new Map();
+    inventoryItems.forEach((item) => {
+      const batches = Array.isArray(item.batches) && item.batches.length
+        ? item.batches.filter((batch) => batch.expiryDate && Number(batch.quantity) > 0)
+        : Number(item.quantity) > 0 && item.expiryDate ? [{ expiryDate: item.expiryDate, quantity: item.quantity }] : [];
+      batches.forEach((batch) => {
+        const expiryDate = new Date(batch.expiryDate);
+        if (expiryDate < clinicToday) {
+          currentInventory.expiredBatchCount += 1;
+        } else if (expiryDate <= expiryLimit) {
+          currentInventory.expiringBatchCount += 1;
+        }
+        if (expiryDate >= clinicToday && expiryDate <= expiryLimit) {
+          const monthParts = Object.fromEntries(new Intl.DateTimeFormat('en', {
+            timeZone: 'Africa/Addis_Ababa',
+            year: 'numeric',
+            month: '2-digit'
+          }).formatToParts(expiryDate).map(({ type, value }) => [type, value]));
+          const month = `${monthParts.year}-${monthParts.month}`;
+          expiryByMonth.set(month, (expiryByMonth.get(month) || 0) + 1);
+        }
+      });
+    });
+    currentInventory.expiryByMonth = [...expiryByMonth.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([_id, count]) => ({ _id, count }));
 
     return res.status(200).json({
       success: true,
+      trendInterval,
       summary: {
         totalPatients: summary.totalPatients || 0,
-        avgWaitTime: summary.avgWaitMinutes == null ? null : Math.round(summary.avgWaitMinutes),
+        avgWaitTime: queueWaitSummary[0]?.avgWaitMinutes == null
+          ? null
+          : Math.round(queueWaitSummary[0].avgWaitMinutes),
         emergencyPatients: summary.emergencyPatients || 0,
-        totalMedicinesDispensed: medicineSummary[0]?.totalQuantity || 0
+        totalMedicinesDispensed: dispensingLogCount ? medicineSummary[0]?.totalQuantity || 0 : null,
+        attendance: {
+          present: attendanceCounts.present || 0,
+          late: attendanceCounts.late || 0,
+          absent: attendanceCounts.absent || 0,
+          approvedLeaveRequests: leaveRequestCount
+        },
+        requisitions: {
+          pending: requisitions.pending || 0,
+          approved: requisitions.approved || 0,
+          rejected: requisitions.rejected || 0,
+          returned: requisitions.returned || 0,
+          pendingEstimatedCost: estimatedCostByStatus.pending || 0,
+          approvedEstimatedCost: estimatedCostByStatus.approved || 0,
+          averageApprovalHours: approvedRequisitions
+            ? Number((totalApprovalHours / approvedRequisitions).toFixed(1))
+            : null
+        }
       },
       patientTrends,
       topDiseases,
-      departmentWorkload,
+      departmentWorkload: departmentWorkload.map((row) => ({
+        ...row,
+        avgWaitMinutes: departmentWaitRows.find((waitRow) => waitRow._id === row._id)?.avgWaitMinutes ?? null
+      })),
       medicineUsage,
       staffPerformance,
-      departments: [...new Set([...departments, ...staffDepartments])].sort((left, right) => left.localeCompare(right))
+      currentInventory,
+      inventoryNote: 'Inventory figures are a current snapshot. Historical stock-out, expiry loss and unfilled-demand events are not recorded.',
+      departments: [...new Set([
+        ...configuredDepartments.map(({ name }) => name),
+        ...departments,
+        ...staffDirectory.map(({ department: staffDepartment }) => staffDepartment)
+      ].filter(Boolean))].sort((left, right) => left.localeCompare(right))
     });
   } catch (error) {
     console.error('Failed to load clinic-head analytics:', error);

@@ -684,7 +684,7 @@ const StaffDirectory = () => {
   const [staff, setStaff] = useState([]);
   const [roles, setRoles] = useState([]);
   const [departments, setDepartments] = useState([]);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('staff') || '');
   const [department, setDepartment] = useState('All');
   const [role, setRole] = useState('All');
   const [status, setStatus] = useState('All');
@@ -794,7 +794,7 @@ const TodayAttendance = () => {
   const [roleOptions, setRoleOptions] = useState([]);
   const [department, setDepartment] = useState('All');
   const [role, setRole] = useState('All');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('staff') || '');
   const [scheduleFilter, setScheduleFilter] = useState('scheduled');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -886,7 +886,7 @@ const TodayAttendance = () => {
           note: member.attendanceNote || ''
         }));
       const { data } = await axios.post('/api/roster/attendance/today', { attendanceUpdates }, authHeaders(token));
-      setSavedMessage(data.message || `Attendance saved for ${data.savedCount || 0} staff members.`);
+      setSavedMessage([data.message || `Attendance saved for ${data.savedCount || 0} staff members.`, data.warning].filter(Boolean).join(' '));
       await loadAttendance();
     } catch (saveError) {
       console.error('Failed to save attendance:', saveError);

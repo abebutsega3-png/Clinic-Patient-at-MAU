@@ -22,6 +22,7 @@ const clinicNotificationSchema = new mongoose.Schema({
   },
   recipientRole: { type: String, default: '' },
   recipientDepartment: { type: String, default: '' },
+  targetPath: { type: String, default: '' },
   sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   batchId: { type: String, default: undefined },
   deliveryAttempts: [{
@@ -31,6 +32,8 @@ const clinicNotificationSchema = new mongoose.Schema({
     failureReason: { type: String, default: '' },
   }],
   readAt: { type: Date, default: null },
+  dismissedAt: { type: Date, default: null, index: true },
+  dismissedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   createdAt: { type: Date, default: Date.now }
 });
 

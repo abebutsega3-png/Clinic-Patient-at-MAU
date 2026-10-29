@@ -17,11 +17,16 @@ import publicClinicRoutes from './router/publicClinicRoutes.js';
 import adminDashboardRoutes from './router/adminDashboardRoutes.js';
 import adminUserRoutes from './router/adminUserRoutes.js';
 import rolePermissionRoutes from './router/rolePermissionRoutes.js';
+import dispensaryRoutes from './router/dispensaryRoutes.js';
 import departmentRoutes from './router/departmentRoutes.js';
 import masterDataRoutes from './router/masterDataRoutes.js';
 import cardRoomRoutes from './router/cardRoomRoutes.js';
 import { seedRolesAndPermissions } from './module/seedRolesAndPermissions.js';
 import { seedMasterDataDefaults } from './module/masterDataCatalog.js';
+import {
+  runClinicOperationsAlertCheck,
+  runInventoryAlertCheck
+} from './services/inventoryAlertService.js';
 
 // 1. Routes (የተጨመሩ Route Imports - የራስህን የፋይል መንገዶች አስገባ)
 // ለምሳሌ: import authRouter from './routes/auth.js';
@@ -51,6 +56,7 @@ app.use('/api/dashboard', clinicHeadRoutes);
 app.use('/api/admin/dashboard', adminDashboardRoutes);
 app.use('/api/admin/users', adminUserRoutes);
 app.use('/api/roles', rolePermissionRoutes);
+app.use('/api/dispensary', dispensaryRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/master-data', masterDataRoutes);
 app.use('/api/approvals', clinicHeadApprovalRoutes);
@@ -93,6 +99,18 @@ app.use((err, req, res, next) => {
 // Server Setup
 const PORT = Number(process.env.BACKEND_PORT || process.env.PORT || 5000);
 let shuttingDown = false;
+let inventoryAlertInterval;
+
+const checkInventoryAlerts = () => {
+  void Promise.all([
+    runInventoryAlertCheck().catch((error) => {
+      console.error('Scheduled inventory alert check failed:', error);
+    }),
+    runClinicOperationsAlertCheck().catch((error) => {
+      console.error('Scheduled Clinic Head operations alert check failed:', error);
+    })
+  ]);
+};
 
 const formatError = (error) => (
   error instanceof Error ? error.stack || error.message : String(error)
@@ -102,6 +120,7 @@ const handleFatalError = async (source, error) => {
   console.error(`${source}:`, formatError(error));
   if (shuttingDown) return;
   shuttingDown = true;
+  if (inventoryAlertInterval) clearInterval(inventoryAlertInterval);
 
   const shutdownTimeout = setTimeout(() => {
     console.error('Graceful shutdown timed out; forcing process exit.');
@@ -147,11 +166,20 @@ const startServer = async () => {
     await seedMasterDataDefaults();
 
     // 2. ከዳታቤዝ ከተገናኘ በኋላ Server ይነሳል
+    checkInventoryAlerts();
+    inventoryAlertInterval = setInterval(checkInventoryAlerts, 15 * 60 * 1000);
+    inventoryAlertInterval.unref();
     httpServer.listen(PORT, '0.0.0.0', () => {
       console.log(`Server is running on port ${PORT}`);
     });
   } catch (error) {
     console.error('Failed to start server:', formatError(error));
+    try {
+      await mongoose.disconnect();
+    } catch (disconnectError) {
+      console.error('Failed to close MongoDB connection after startup failure:', formatError(disconnectError));
+    }
+    process.exitCode = 1;
   }
 };
 

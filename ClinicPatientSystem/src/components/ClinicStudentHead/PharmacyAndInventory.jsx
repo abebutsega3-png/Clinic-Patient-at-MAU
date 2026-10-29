@@ -10,8 +10,13 @@ import {
   Download, 
   Calendar, 
   FileText, 
-  Clock3 
+  Clock3,
+  Check,
+  X,
+  PackageCheck,
+  MapPin
 } from 'lucide-react';
+import { updateRequestStatus } from '../../utile/clinicheadapprovalApi.jsx';
 
 const PharmacyAndInventory = () => {
   const { token } = useAuth();
@@ -21,7 +26,8 @@ const PharmacyAndInventory = () => {
     lowStockCount: 0,
     expiringSoonCount: 0,
     outOfStockCount: 0,
-    expiredCount: 0
+    expiredCount: 0,
+    pendingPurchaseRequestCount: 0
   });
 
   const [stockTable, setStockTable] = useState([]);
@@ -29,8 +35,8 @@ const PharmacyAndInventory = () => {
   const [dispensingReport, setDispensingReport] = useState([]);
 
   // Filters
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
+  const [statusFilter, setStatusFilter] = useState(() => new URLSearchParams(window.location.search).get('statusFilter') || 'all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -38,6 +44,13 @@ const PharmacyAndInventory = () => {
   const [reportLoading, setReportLoading] = useState(true);
   const [error, setError] = useState('');
   const [reportError, setReportError] = useState('');
+  const [reviewRequest, setReviewRequest] = useState(null);
+  const [reviewAction, setReviewAction] = useState('');
+  const [approvedQuantity, setApprovedQuantity] = useState('');
+  const [reviewComment, setReviewComment] = useState('');
+  const [savingDecision, setSavingDecision] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [expiryWarningDays, setExpiryWarningDays] = useState(90);
 
   const authConfig = useMemo(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
 
@@ -48,6 +61,7 @@ const PharmacyAndInventory = () => {
       const params = new URLSearchParams({ search: searchQuery, statusFilter });
       const { data } = await axios.get(`/api/pharmacy/overview?${params}`, authConfig);
       setSummary(data.summaryCards || {});
+      setExpiryWarningDays(data.expiryWarningDays || 90);
       setStockTable(Array.isArray(data.stockTable) ? data.stockTable : []);
       setPurchaseRequests(Array.isArray(data.purchaseRequests) ? data.purchaseRequests : []);
     } catch (loadError) {
@@ -87,6 +101,11 @@ const PharmacyAndInventory = () => {
   useEffect(() => { void Promise.resolve().then(fetchDispensingReport); }, [fetchDispensingReport]);
 
   const exportReport = () => {
+    const escapeCsvCell = (cell) => {
+      const value = String(cell ?? '');
+      const safeValue = /^[\t\r ]*[=+\-@]/.test(value) ? `'${value}` : value;
+      return `"${safeValue.replaceAll('"', '""')}"`;
+    };
     const rows = [
       ['Medicine', 'Times dispensed', 'Quantity dispensed', 'Patients'],
       ...dispensingReport.map((record) => [
@@ -96,21 +115,67 @@ const PharmacyAndInventory = () => {
         record.patientCount
       ])
     ];
-    const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(',')).join('\r\n');
+    const csv = rows.map((row) => row.map(escapeCsvCell).join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = `dispensing-report-${startDate || 'all'}-${endDate || 'dates'}.csv`;
     anchor.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const openReview = (request, action) => {
+    setReviewRequest(request);
+    setReviewAction(action);
+    setApprovedQuantity(String(request.purchase?.quantity ?? ''));
+    setReviewComment('');
+    setNotice('');
+  };
+
+  const submitDecision = async (event) => {
+    event.preventDefault();
+    if (!reviewRequest || !reviewAction) return;
+    if (reviewAction === 'rejected' && !reviewComment.trim()) {
+      setError('Enter a reason before rejecting a purchase request.');
+      return;
+    }
+    const quantity = Number(approvedQuantity);
+    if (reviewAction === 'approved'
+      && (!Number.isInteger(quantity) || quantity < 1 || quantity > reviewRequest.purchase.quantity)) {
+      setError(`Enter an approved quantity between 1 and ${reviewRequest.purchase.quantity}.`);
+      return;
+    }
+
+    setSavingDecision(true);
+    setError('');
+    try {
+      const result = await updateRequestStatus(
+        reviewRequest._id,
+        reviewAction,
+        reviewComment.trim(),
+        token,
+        'approval',
+        reviewAction === 'approved' ? quantity : undefined
+      );
+      setReviewRequest(null);
+      setReviewAction('');
+      setNotice([result.message, result.warning].filter(Boolean).join(' ') || `Purchase request ${reviewAction}.`);
+      await fetchOverviewData();
+    } catch (decisionError) {
+      console.error('Failed to decide purchase request:', decisionError);
+      setError(decisionError.response?.data?.message || 'Unable to save the purchase request decision.');
+    } finally {
+      setSavingDecision(false);
+    }
   };
 
   return (
     <div className="min-h-screen space-y-6 bg-slate-50 p-4 sm:p-6">
       <header>
         <h1 className="text-2xl font-bold text-slate-800">Pharmacy &amp; Inventory Oversight</h1>
-        <p className="mt-1 text-sm text-slate-500">Monitor medicine stock, expiry risks, purchase-request progress, and dispensing activity. Inventory and purchase records are view-only here.</p>
+        <p className="mt-1 text-sm text-slate-500">Monitor stock, expiry risks, purchase requests and dispensing trends. Approve or reject requisitions; pharmacy staff manage dispensing and stock handling.</p>
       </header>
+      {notice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div>}
       {error && (
         <div role="alert" className="flex items-start justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           <span>{error}</span>
@@ -118,8 +183,7 @@ const PharmacyAndInventory = () => {
         </div>
       )}
       
-      {/* 🟢 KIFIL 1: TOP 4 SUMMARY CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
         
         {/* Total Medicines */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -142,7 +206,7 @@ const PharmacyAndInventory = () => {
         {/* Expiring Soon */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase">Expiring Within 3 Months</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase">Expiring Within {expiryWarningDays} Days</p>
             <h3 className="text-2xl font-bold text-purple-600 mt-1">{loading ? '—' : summary.expiringSoonCount}</h3>
           </div>
           <div className="p-3 bg-purple-50 text-purple-600 rounded-xl"><Clock size={22} /></div>
@@ -156,15 +220,28 @@ const PharmacyAndInventory = () => {
           </div>
           <div className="p-3 bg-rose-50 text-rose-600 rounded-xl"><XCircle size={22} /></div>
         </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase">Expired Items</p>
+            <h3 className="text-2xl font-bold text-rose-700 mt-1">{loading ? '—' : summary.expiredCount}</h3>
+          </div>
+          <div className="p-3 bg-rose-50 text-rose-600 rounded-xl"><AlertTriangle size={22} /></div>
+        </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase">Pending Requisitions</p>
+            <h3 className="text-2xl font-bold text-violet-700 mt-1">{loading ? '—' : summary.pendingPurchaseRequestCount}</h3>
+          </div>
+          <div className="p-3 bg-violet-50 text-violet-600 rounded-xl"><Clock3 size={22} /></div>
+        </div>
 
       </div>
 
 
-      {/* 🟢 KIFIL 2: STOCK TABLE (MAIN - VIEW ONLY) */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-            <Pill className="text-teal-600" size={20} /> Medicine Stock (View Only)
+            <Pill className="text-teal-600" size={20} /> Medicine &amp; Supply Stock
           </h2>
 
           {/* Search & Status Filter */}
@@ -190,7 +267,7 @@ const PharmacyAndInventory = () => {
               <option value="low_stock">Low stock</option>
               <option value="out_of_stock">Out of stock</option>
               <option value="expired">Expired</option>
-              <option value="expiring_soon">Expiring within 3 months</option>
+              <option value="expiring_soon">Expiring within {Math.max(1, Math.round(expiryWarningDays / 30))} months</option>
             </select>
           </div>
         </div>
@@ -202,6 +279,7 @@ const PharmacyAndInventory = () => {
               <tr>
                 <th className="p-3">Medicine</th>
                 <th className="p-3">Category</th>
+                <th className="p-3">Storage location</th>
                 <th className="p-3">Quantity</th>
                 <th className="p-3">Reorder Level</th>
                 <th className="p-3">Batch Expiry Dates</th>
@@ -210,9 +288,9 @@ const PharmacyAndInventory = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan="6" className="p-6 text-center text-slate-400">Loading inventory...</td></tr>
+                <tr><td colSpan="7" className="p-6 text-center text-slate-400">Loading inventory...</td></tr>
               ) : stockTable.length === 0 ? (
-                <tr><td colSpan="6" className="p-6 text-center text-slate-400">No inventory items match these filters.</td></tr>
+                <tr><td colSpan="7" className="p-6 text-center text-slate-400">No inventory items match these filters.</td></tr>
               ) : (
                 stockTable.map((item) => (
                   <tr key={item._id} className="hover:bg-slate-50">
@@ -221,17 +299,17 @@ const PharmacyAndInventory = () => {
                       {item.itemCode && <span className="mt-1 block font-mono text-[10px] font-medium text-slate-400">Catalog: {item.itemCode}</span>}
                     </td>
                     <td className="p-3 font-medium text-slate-500">{item.category || 'Other'}</td>
+                    <td className="p-3 text-slate-500"><span className="inline-flex items-center gap-1"><MapPin size={13} />{item.storageLocation || 'Not recorded'}</span></td>
                     <td className="p-3 font-semibold">{item.quantity} {item.unit}</td>
                     <td className="p-3 text-slate-400">{item.effectiveReorderLevel ?? item.reorderLevel} {item.unit}</td>
                     <td className="p-3">
-                      {item.expiryDates?.length ? (
+                      {item.expiryEntries?.length ? (
                         <div className="space-y-1">
-                          {item.expiryDates.map((expiryDate, index) => {
-                            const date = new Date(expiryDate);
-                            const expired = date < new Date();
-                            return <p key={`${expiryDate}-${index}`} className={expired ? 'font-semibold text-rose-700' : item.expiringSoon ? 'font-semibold text-amber-700' : ''}>
-                              {item.batches?.[index]?.batchNumber ? `${item.batches[index].batchNumber}: ` : ''}{Number.isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleDateString()}
-                              {expired ? ' · Expired' : item.expiringSoon ? ' · Expiring soon' : ''}
+                          {item.expiryEntries.map((entry, index) => {
+                            const date = new Date(entry.expiryDate);
+                            return <p key={`${entry.batchNumber || entry.expiryDate}-${index}`} className={entry.expired ? 'font-semibold text-rose-700' : entry.expiringSoon ? 'font-semibold text-amber-700' : ''}>
+                              {entry.batchNumber ? `${entry.batchNumber}: ` : ''}{Number.isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleDateString()}
+                              {entry.expired ? ' · Expired' : entry.expiringSoon ? ' · Expiring soon' : ''}
                             </p>;
                           })}
                         </div>
@@ -258,10 +336,9 @@ const PharmacyAndInventory = () => {
       </div>
 
 
-      {/* 🟢 KIFIL 3: PURCHASE REQUESTS STATUS (READ-ONLY) */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
         <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-          <Clock3 className="text-purple-600" size={18} /> Purchase Request Status (View Only)
+          <PackageCheck className="text-purple-600" size={18} /> Purchase Requisitions
         </h2>
         
         <div className="overflow-x-auto">
@@ -272,24 +349,27 @@ const PharmacyAndInventory = () => {
                 <th className="p-2.5">Requested by / Department</th>
                 <th className="p-2.5">Item</th>
                 <th className="p-2.5">Quantity</th>
+                <th className="p-2.5">Est. cost</th>
                 <th className="p-2.5">Approval</th>
                 <th className="p-2.5">Delivery</th>
+                <th className="p-2.5">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan="6" className="p-4 text-center text-slate-400">Loading purchase requests...</td></tr>
+                <tr><td colSpan="8" className="p-4 text-center text-slate-400">Loading purchase requests...</td></tr>
               ) : purchaseRequests.length === 0 ? (
-                <tr><td colSpan="6" className="p-4 text-center text-slate-400">No purchase requests have been submitted.</td></tr>
+                <tr><td colSpan="8" className="p-4 text-center text-slate-400">No purchase requests have been submitted.</td></tr>
               ) : (
                 purchaseRequests.map((req) => (
                   <tr key={req._id}>
                     <td className="p-2.5 font-mono text-[11px] text-slate-500">{req.requestNumber || req._id.substring(0, 8)}</td>
-                    <td className="p-2.5 text-slate-600">{req.applicantName}<span className="block text-[11px]">{req.department || req.purchase?.requesterDepartment || 'Department not listed'}</span></td>
-                    <td className="p-2.5 font-bold text-slate-700">{req.purchase?.itemName || 'Not specified'}<span className="block text-[11px] font-normal text-slate-500">{req.purchase?.category || 'Other'}</span></td>
+                    <td className="p-2.5 text-slate-600">{req.applicantName}<span className="block text-[11px]">{req.department || req.purchase?.requesterDepartment || 'Department not listed'}</span><span className="block max-w-48 truncate text-[11px] text-slate-400" title={req.reason}>{req.reason || 'No reason provided'}</span></td>
+                    <td className="p-2.5 font-bold text-slate-700">{req.purchase?.itemName || 'Not specified'}<span className="block text-[11px] font-normal text-slate-500">{req.purchase?.category || 'Other'} · {req.priority || 'normal'} priority</span></td>
                     <td className="p-2.5">{req.status === 'approved' && req.purchase?.approvedQuantity != null
                       ? `${req.purchase.approvedQuantity} / ${req.purchase.quantity}`
                       : req.purchase?.quantity ?? '—'} {req.purchase?.unit || 'units'}</td>
+                    <td className="p-2.5">{req.purchase?.estimatedCost ? `${Number(req.purchase.estimatedCost).toLocaleString()} ETB` : 'Not provided'}</td>
                     <td className="p-2.5">
                       <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
                         req.status === 'approved' ? 'bg-emerald-50 text-emerald-600' :
@@ -300,6 +380,14 @@ const PharmacyAndInventory = () => {
                       </span>
                     </td>
                     <td className="p-2.5 text-xs capitalize">{(req.fulfillmentStatus || (req.status === 'approved' ? 'awaiting_delivery' : 'awaiting_approval')).replaceAll('_', ' ')}</td>
+                    <td className="p-2.5">
+                      {req.status === 'pending' ? (
+                        <div className="flex items-center gap-1.5">
+                          <button type="button" onClick={() => openReview(req, 'approved')} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2 py-1.5 font-semibold text-white hover:bg-emerald-700" aria-label={`Approve ${req.purchase?.itemName || 'purchase request'}`}><Check size={13} />Approve</button>
+                          <button type="button" onClick={() => openReview(req, 'rejected')} className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-2 py-1.5 font-semibold text-white hover:bg-rose-700" aria-label={`Reject ${req.purchase?.itemName || 'purchase request'}`}><X size={13} />Reject</button>
+                        </div>
+                      ) : <span className="text-slate-400">Reviewed</span>}
+                    </td>
                   </tr>
                 ))
               )}
@@ -309,7 +397,6 @@ const PharmacyAndInventory = () => {
       </div>
 
 
-      {/* 🟢 KIFIL 4: DISPENSING REPORT */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
@@ -347,6 +434,21 @@ const PharmacyAndInventory = () => {
 
         {/* Report Table */}
         <div className="overflow-x-auto">
+          {!reportLoading && !reportError && dispensingReport.length > 0 && (
+            <div className="mb-5 space-y-3" aria-label="Most dispensed medicines">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Highest consumption in selected period</h3>
+              {dispensingReport.slice(0, 5).map((rep) => {
+                const maxQuantity = Math.max(...dispensingReport.map((record) => record.totalQuantityDispensed), 1);
+                return (
+                  <div key={rep._id} className="grid grid-cols-[7rem_1fr_auto] items-center gap-3 text-xs">
+                    <span className="truncate font-medium text-slate-600">{rep._id}</span>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-500" style={{ width: `${Math.max(3, (rep.totalQuantityDispensed / maxQuantity) * 100)}%` }} /></div>
+                    <span className="font-semibold text-slate-700">{rep.totalQuantityDispensed}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <table className="w-full text-left text-xs text-slate-600">
             <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
               <tr>
@@ -376,7 +478,37 @@ const PharmacyAndInventory = () => {
             </tbody>
           </table>
         </div>
+        <p className="text-xs text-slate-400">Dispensing logs do not currently include unit costs, so budget expenditure cannot be calculated from this report.</p>
       </div>
+
+      {reviewRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="presentation">
+          <form onSubmit={submitDecision} role="dialog" aria-modal="true" aria-labelledby="purchase-review-title" className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="purchase-review-title" className="text-lg font-bold text-slate-800">{reviewAction === 'approved' ? 'Approve purchase request' : 'Reject purchase request'}</h2>
+                <p className="mt-1 text-sm text-slate-500">{reviewRequest.purchase?.itemName} · Requested {reviewRequest.purchase?.quantity} {reviewRequest.purchase?.unit || 'units'}</p>
+              </div>
+              <button type="button" onClick={() => setReviewRequest(null)} aria-label="Close review" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            {reviewAction === 'approved' && (
+              <label className="block space-y-1.5 text-sm font-semibold text-slate-700">
+                Approved quantity
+                <input type="number" min="1" max={reviewRequest.purchase?.quantity} step="1" required value={approvedQuantity} onChange={(event) => setApprovedQuantity(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 font-normal" />
+                <span className="block text-xs font-normal text-slate-500">Approval authorizes procurement; it does not add stock to inventory.</span>
+              </label>
+            )}
+            <label className="block space-y-1.5 text-sm font-semibold text-slate-700">
+              {reviewAction === 'rejected' ? 'Reason for rejection (required)' : 'Comment (optional)'}
+              <textarea required={reviewAction === 'rejected'} maxLength="1000" value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} rows="3" className="w-full rounded-xl border border-slate-200 px-3 py-2 font-normal" placeholder={reviewAction === 'rejected' ? 'Explain why this request is rejected…' : 'Add an approval note…'} />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setReviewRequest(null)} disabled={savingDecision} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 disabled:opacity-50">Cancel</button>
+              <button type="submit" disabled={savingDecision} className={`rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${reviewAction === 'approved' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>{savingDecision ? 'Saving…' : reviewAction === 'approved' ? 'Confirm approval' : 'Confirm rejection'}</button>
+            </div>
+          </form>
+        </div>
+      )}
 
     </div>
   );

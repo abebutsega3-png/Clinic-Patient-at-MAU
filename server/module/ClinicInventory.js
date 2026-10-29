@@ -5,6 +5,7 @@ const clinicInventorySchema = new mongoose.Schema({
   itemCode: { type: String, trim: true, default: '' },
   masterDataId: { type: mongoose.Schema.Types.ObjectId, ref: 'MasterDataRecord', default: null, index: true },
   category: { type: String, trim: true, default: 'Other' },
+  storageLocation: { type: String, trim: true, default: '' },
   quantity: { type: Number, required: true, min: 0 },
   reorderLevel: { type: Number, required: true, min: 0, default: 0 },
   unit: { type: String, trim: true, default: 'units' },

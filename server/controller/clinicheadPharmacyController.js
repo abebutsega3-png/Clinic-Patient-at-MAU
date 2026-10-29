@@ -11,6 +11,11 @@ const parseDateRange = (startDate, endDate) => {
   if (!datePattern.test(startDate || '') || !datePattern.test(endDate || '') || startDate > endDate) {
     return null;
   }
+  const isCalendarDate = (value) => {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  };
+  if (!isCalendarDate(startDate) || !isCalendarDate(endDate)) return null;
   const start = new Date(`${startDate}T00:00:00.000Z`);
   const end = new Date(`${endDate}T23:59:59.999Z`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
@@ -25,13 +30,14 @@ export const getPharmacyOverview = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Choose a valid inventory status filter.' });
     }
 
-    const [inventoryItems, purchaseRequests, settings] = await Promise.all([
+    const [inventoryItems, purchaseRequests, pendingPurchaseRequestCount, settings] = await Promise.all([
       ClinicInventory.find().sort({ itemName: 1 }).lean(),
       ApprovalRequest.find({ requestType: 'purchase_request' })
-        .select('requestNumber applicantName department purchase status fulfillmentStatus createdAt')
+        .select('requestNumber applicantName applicantId department reason priority purchase status fulfillmentStatus createdAt')
         .sort({ createdAt: -1 })
         .limit(100)
         .lean(),
+      ApprovalRequest.countDocuments({ requestType: 'purchase_request', status: 'pending' }),
       ClinicOperationalSettings.findOne({ key: 'clinic' }).select('inventoryRules').lean()
     ]);
     const expiryWarningDays = settings?.inventoryRules?.expiryWarningDays || 90;
@@ -40,24 +46,36 @@ export const getPharmacyOverview = async (req, res) => {
       (settings?.inventoryRules?.categoryThresholds || [])
         .map(({ category, threshold }) => [category.trim().toLocaleLowerCase(), threshold])
     );
+    const defaultThreshold = settings?.inventoryRules?.defaultThreshold ?? 20;
 
     const stockTable = inventoryItems.map((item) => {
       const batches = Array.isArray(item.batches) ? item.batches : [];
       const datedBatches = batches
-        .filter((batch) => batch.expiryDate)
+        .filter((batch) => batch.expiryDate && Number(batch.quantity) > 0)
         .map((batch) => ({
           batchNumber: batch.batchNumber || '',
           quantity: batch.quantity,
           expiryDate: batch.expiryDate
         }))
         .sort((left, right) => new Date(left.expiryDate) - new Date(right.expiryDate));
-      const expiryDates = datedBatches.length
-        ? datedBatches.map((batch) => batch.expiryDate)
-        : item.expiryDate ? [item.expiryDate] : [];
-      const expired = expiryDates.some((date) => new Date(date) < now);
-      const expiringSoon = expiryDates.some((date) => new Date(date) >= now && new Date(date) <= expiryWarningDate);
+      const expiryEntries = (datedBatches.length
+        ? datedBatches
+        : Number(item.quantity) > 0 && item.expiryDate
+          ? [{ batchNumber: '', quantity: item.quantity, expiryDate: item.expiryDate }]
+          : [])
+        .map((batch) => {
+          const expiryDate = new Date(batch.expiryDate);
+          return {
+            ...batch,
+            expired: expiryDate < now,
+            expiringSoon: expiryDate >= now && expiryDate <= expiryWarningDate
+          };
+        });
+      const expiryDates = expiryEntries.map(({ expiryDate }) => expiryDate);
+      const expired = expiryEntries.some(({ expired: isExpired }) => isExpired);
+      const expiringSoon = expiryEntries.some(({ expiringSoon: isExpiringSoon }) => isExpiringSoon);
       const categoryThreshold = categoryThresholds.get(String(item.category || '').trim().toLocaleLowerCase());
-      const effectiveReorderLevel = categoryThreshold ?? Number(item.reorderLevel);
+      const effectiveReorderLevel = categoryThreshold ?? defaultThreshold ?? Number(item.reorderLevel);
       const computedStatus = Number(item.quantity) <= 0
         ? 'out_of_stock'
         : Number(item.quantity) <= effectiveReorderLevel
@@ -67,6 +85,7 @@ export const getPharmacyOverview = async (req, res) => {
       return {
         ...item,
         batches: datedBatches,
+        expiryEntries,
         expiryDates,
         expired,
         expiringSoon,
@@ -79,7 +98,8 @@ export const getPharmacyOverview = async (req, res) => {
       lowStockCount: stockTable.filter((item) => item.computedStatus === 'low_stock').length,
       expiringSoonCount: stockTable.filter((item) => item.expiringSoon).length,
       outOfStockCount: stockTable.filter((item) => item.computedStatus === 'out_of_stock').length,
-      expiredCount: stockTable.filter((item) => item.expired).length
+      expiredCount: stockTable.filter((item) => item.expired).length,
+      pendingPurchaseRequestCount
     };
     const matchingSearch = search.trim()
       ? new RegExp(escapeRegex(search.trim()), 'i')
@@ -94,6 +114,7 @@ export const getPharmacyOverview = async (req, res) => {
     return res.status(200).json({
       success: true,
       summaryCards,
+      expiryWarningDays,
       stockTable: filteredStock,
       purchaseRequests
     });
