@@ -43,6 +43,7 @@ import RequestsAndProcurement from './components/Card Room/RequestsAndProcuremen
 import DispensaryRoomSidebar from './components/Dispensary Room/Dispensary Room Sidebar.jsx';
 import DispensaryNavbar from './components/Dispensary Room/Dispensary Navbar.jsx';
 import DispensaryDashboard from './components/Dispensary Room/Dispensary Dashboard.jsx';
+import ExaminationRoom from './page/Examination Room.jsx';
 
 function DispensaryLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -152,6 +153,7 @@ function App() {
         <Route path="/login" element={<div className="flex min-h-screen flex-col"><Navbar /><LoginPage /><Footer /></div>} />
         <Route path="/purchase-requests" element={<DepartmentPurchaseRequests />} />
         <Route path="/change-password" element={<div className="flex min-h-screen flex-col"><Navbar /><ForcePasswordChange /><Footer /></div>} />
+        <Route path="/examination-room" element={<ExaminationRoom />} />
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboard />} />
           <Route path="users" element={<UserManagement />} />

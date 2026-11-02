@@ -49,19 +49,29 @@ export default function LoginPage() {
         navigate('/change-password', { replace: true });
         return;
       }
-      const role = String(result.user.activeRole || result.user.role || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[_-]+/g, ' ');
+      const userRoles = [
+        result.user.activeRole,
+        result.user.role,
+        ...(Array.isArray(result.user.roles) ? result.user.roles : []),
+        result.user.position,
+        result.user.department,
+      ]
+        .filter(Boolean)
+        .map((userRole) => String(userRole).trim().toLowerCase().replace(/[_-]+/g, ' '));
+      const hasRole = (...roleNames) => userRoles.some((userRole) => (
+        roleNames.some((roleName) => userRole.includes(roleName))
+      ));
 
-      if (role === 'card chief') {
+      if (hasRole('card chief')) {
         navigate('/card-room', { replace: true });
-      } else if (role.includes('clinic head')) {
+      } else if (hasRole('clinic head')) {
         navigate('/clinic-head', { replace: true });
-      } else if (role.includes('admin')) {
+      } else if (hasRole('admin')) {
         navigate('/admin', { replace: true });
-      } else if (['pharmacist', 'drug store manager', 'dispensary room'].includes(role)) {
+      } else if (hasRole('pharmacist', 'drug store manager', 'dispensary room')) {
         navigate('/dispensary', { replace: true });
+      } else if (hasRole('examination', 'exam room', 'doctor')) {
+        navigate('/examination-room', { replace: true });
       } else if (result.user.department) {
         navigate('/purchase-requests', { replace: true });
       } else {

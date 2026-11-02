@@ -21,6 +21,7 @@ import dispensaryRoutes from './router/dispensaryRoutes.js';
 import departmentRoutes from './router/departmentRoutes.js';
 import masterDataRoutes from './router/masterDataRoutes.js';
 import cardRoomRoutes from './router/cardRoomRoutes.js';
+import examinationRoutes from './router/examinationDashboaredRoutes.js';
 import { seedRolesAndPermissions } from './module/seedRolesAndPermissions.js';
 import { seedMasterDataDefaults } from './module/masterDataCatalog.js';
 import {
@@ -66,6 +67,7 @@ app.use('/api/reports', clinicHeadReportRoutes);
 app.use('/api/clinic-head/settings', clinicHeadSettingsRoutes);
 app.use('/api/public/clinic', publicClinicRoutes);
 app.use('/api/card-room', cardRoomRoutes);
+app.use('/api/examination', examinationRoutes);
 
 // ----------------------------------------------------
 // 2. API Routes እዚህ ላይ መግባት አለባቸው!

@@ -131,6 +131,9 @@ export const login = async (req, res) => {
         email: user.email,
         role: user.role,
         activeRole: user.activeRole,
+        roles: user.roles || [],
+        department: user.department,
+        position: user.position,
         mustChangePassword: user.mustChangePassword
       }
     });

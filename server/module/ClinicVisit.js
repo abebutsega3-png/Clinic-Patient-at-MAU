@@ -13,6 +13,31 @@ const clinicVisitSchema = new mongoose.Schema({
   idempotencyKey: { type: String, trim: true, default: undefined },
   registeredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   diagnosis: { type: String, trim: true, default: '' },
+  examination: {
+    chiefComplaint: { type: String, trim: true, default: '' },
+    historyOfPresentIllness: { type: String, trim: true, default: '' },
+    vitals: {
+      bloodPressure: { type: String, trim: true, default: '' },
+      temperature: { type: String, trim: true, default: '' },
+      pulse: { type: String, trim: true, default: '' },
+    },
+    labRequests: [{
+      testName: { type: String, trim: true, required: true },
+      status: { type: String, enum: ['Pending', 'In Progress', 'Results Ready'], default: 'Pending' },
+      result: { type: String, trim: true, default: '' },
+    }],
+    prescriptions: [{
+      medicine: { type: String, trim: true, required: true },
+      dosage: { type: String, trim: true, default: '' },
+      instructions: { type: String, trim: true, default: '' },
+    }],
+    referral: {
+      department: { type: String, trim: true, default: '' },
+      reason: { type: String, trim: true, default: '' },
+      referredAt: { type: Date, default: null },
+    },
+    sickLeaveDays: { type: Number, min: 0, max: 365, default: 0 },
+  },
   waitTimeMinutes: { type: Number, min: 0, default: null },
   attendedByStaffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Staff', default: null, index: true },
   emergency: { type: Boolean, default: false, index: true },
