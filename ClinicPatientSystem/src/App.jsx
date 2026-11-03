@@ -43,6 +43,9 @@ import RequestsAndProcurement from './components/Card Room/RequestsAndProcuremen
 import DispensaryRoomSidebar from './components/Dispensary Room/Dispensary Room Sidebar.jsx';
 import DispensaryNavbar from './components/Dispensary Room/Dispensary Navbar.jsx';
 import DispensaryDashboard from './components/Dispensary Room/Dispensary Dashboard.jsx';
+import DispensaryInventory from './components/Dispensary Room/DispensaryInventory.jsx';
+import PrescriptionsDispensing from './components/Dispensary Room/Prescriptions & Dispensing.jsx';
+import StoreRequisition from './components/Dispensary Room/StoreRequisition.jsx';
 import ExaminationRoom from './page/Examination Room.jsx';
 
 function DispensaryLayout() {
@@ -82,15 +85,16 @@ function DispensaryLayout() {
 function DispensarySection() {
   const { pathname } = useLocation();
   const currentPath = pathname.replace(/\/+$/, '');
-  const title = currentPath.split('/').pop().split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-
-  return (
-    <section className="mx-auto max-w-6xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-      <p className="text-sm font-semibold text-orange-700">MAU Clinic · Pharmacy / Dispensary</p>
-      <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
-      <p className="mt-2 text-sm text-slate-600">This dispensary workflow is not connected yet. Use the dashboard for current stock alerts and dispensing activity.</p>
-    </section>
-  );
+  if (currentPath === '/dispensary/stock') {
+    return <DispensaryInventory />;
+  }
+  if (['/dispensary/pending-orders', '/dispensary/dispense'].includes(currentPath)) {
+    return <PrescriptionsDispensing />;
+  }
+  if (currentPath === '/dispensary/requisitions') {
+    return <StoreRequisition />;
+  }
+  return <DispensaryDashboard />;
 }
 
 function ClinicHeadLayout() {
@@ -174,6 +178,7 @@ function App() {
           <Route path="approvals" element={<ApprovalsAndRequests />} />
           <Route path="staff" element={<DutyRoster />} />
           <Route path="inventory" element={<PharmacyAndInventory />} />
+          <Route path="store-requisitions" element={<StoreRequisition />} />
           <Route path="reports" element={<ReportsAndAnalytics />} />
           <Route path="settings" element={<ClinicHeadSettings />} />
           <Route path="profile" element={<ClinicHeadProfile />} />

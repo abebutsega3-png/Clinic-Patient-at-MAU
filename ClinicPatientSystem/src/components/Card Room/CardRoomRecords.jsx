@@ -54,6 +54,7 @@ function PatientEditDialog({ patient, token, onClose, onSaved }) {
     universityIdNumber: patient.universityIdNumber || '',
     academicDepartment: patient.academicDepartment || '',
     region: patient.region || '',
+    town: patient.town || '',
     woreda: patient.woreda || '',
     kebele: patient.kebele || '',
     dormBlock: patient.dormBlock || '',
@@ -123,6 +124,7 @@ function PatientEditDialog({ patient, token, onClose, onSaved }) {
           {textField('governmentIdNumber', 'Government ID', { maxLength: 80 })}
           {textField('academicDepartment', 'Department / Faculty', { maxLength: 120 })}
           {textField('region', 'Region', { maxLength: 100 })}
+          {textField('town', 'Town', { maxLength: 100 })}
           {textField('woreda', 'Woreda / Subcity', { maxLength: 100 })}
           {textField('kebele', 'Kebele', { maxLength: 100 })}
           {textField('dormBlock', 'Dorm block / room', { maxLength: 80 })}
@@ -447,7 +449,7 @@ export default function CardRoomRecords() {
                   ['Government ID', selectedPatient.governmentIdNumber],
                   ['Phone number', selectedPatient.phoneNumber],
                   ['Department / Faculty', selectedPatient.academicDepartment],
-                  ['Address', [selectedPatient.region, selectedPatient.woreda, selectedPatient.kebele, selectedPatient.dormBlock, selectedPatient.houseNumber].filter(Boolean).join(', ') || selectedPatient.address],
+                  ['Address', [selectedPatient.region, selectedPatient.town, selectedPatient.woreda, selectedPatient.kebele, selectedPatient.dormBlock, selectedPatient.houseNumber].filter(Boolean).join(', ') || selectedPatient.address],
                   ['Emergency contact', selectedPatient.emergencyContactName],
                   ['Emergency contact phone', selectedPatient.emergencyContactPhone],
                 ]} /></section>

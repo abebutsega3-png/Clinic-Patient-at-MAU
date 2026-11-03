@@ -23,6 +23,80 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import CurrentConsultation from './CurrentConsultation.jsx';
+import LabRequestForm from './LabRequestForm.jsx';
+import PrescriptionPaper from './PrescriptionPaper.jsx';
+
+const parseFormList = (formData, fieldName) => {
+  const value = formData.get(fieldName);
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(String(value));
+    if (!Array.isArray(parsed)) throw new Error();
+    return parsed;
+  } catch {
+    throw new Error(`Unable to read the ${fieldName} form data. Please review the form and try again.`);
+  }
+};
+const formatDate = (value) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString();
+};
+
+const getConsultationPayload = (form) => {
+  const formData = new FormData(form);
+  const referred = formData.get('isReferred') === 'on';
+  return {
+    chiefComplaint: formData.get('chiefComplaint'),
+    historyOfPresentIllness: formData.get('historyOfPresentIllness'),
+    physicalExamination: formData.get('physicalExamination'),
+    reviewOfSystem: formData.get('reviewOfSystem'),
+    diagnosis: formData.get('diagnosis'),
+    otherDiagnosis: formData.get('otherDiagnosis'),
+    hmisDiagnosis: formData.get('hmisDiagnosis'),
+    doctorNotes: formData.get('doctorNotes'),
+    patientCondition: formData.get('patientCondition') || '',
+    disposition: formData.get('disposition') || '',
+    followUpDate: formData.get('followUpDate') || '',
+    prescriptionPatientType: formData.get('prescriptionPatientType') || 'outpatient',
+    vitals: {
+      bloodPressure: formData.get('bloodPressure'),
+      temperature: formData.get('temperature'),
+      pulse: formData.get('pulse'),
+      respiratoryRate: formData.get('rr'),
+      weight: formData.get('weight'),
+    },
+    labRequests: parseFormList(formData, 'labRequests').map((request) => ({
+      ...request,
+      priority: formData.get('labPriority') || 'normal',
+      clinicalNote: formData.get('labClinicalNote') || '',
+    })),
+    prescriptions: parseFormList(formData, 'prescriptions'),
+    opd: {
+      roadTrafficAccident: formData.get('roadTrafficAccident') === 'on',
+      accidentType: formData.get('accidentType'),
+      hivTestOffered: formData.get('hivTestOffered') === 'on',
+      hivTestPerformed: formData.get('hivTestPerformed') === 'on',
+      hivResult: formData.get('hivResult'),
+      targetPopulation: formData.get('targetPopulation'),
+      tbScreened: formData.get('tbScreened') === 'on',
+      tbResult: formData.get('tbResult'),
+      diagnosticEvaluation: formData.get('diagnosticEvaluation'),
+      referredTo: formData.get('referredTo'),
+    },
+    referral: referred ? {
+      department: formData.get('referralDepartment'),
+      reason: formData.get('referralReason'),
+      qualification: formData.get('qualification'),
+      emergency: formData.get('emergencyReferral') === 'on',
+      ambulanceDriver: formData.get('ambulanceDriver'),
+      takeOffTime: formData.get('takeOffTime'),
+      remark: formData.get('remark'),
+    } : { department: '', reason: '' },
+    sickLeaveDays: Number(formData.get('sickLeaveDays') || 0),
+  };
+};
 
 function PanelTitle({ icon: Icon, children, action }) {
   return (
@@ -37,8 +111,9 @@ function PanelTitle({ icon: Icon, children, action }) {
 }
 
 function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSummaryChange }) {
-  const { token } = useAuth();
+  const { token, user, expireSession } = useAuth();
   const [dashboard, setDashboard] = useState(null);
+  const [labVisits, setLabVisits] = useState([]);
   const [queue, setQueue] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -53,7 +128,14 @@ function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSum
   const [patientResults, setPatientResults] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [patientHistory, setPatientHistory] = useState(null);
+  const [activePatientHistoryState, setActivePatientHistory] = useState({ patientId: '', data: null });
   const [savingVisit, setSavingVisit] = useState(false);
+  const [selectedPrescriptionHistoryId, setSelectedPrescriptionHistoryId] = useState('');
+  const canProcessLabResults = [
+    user?.activeRole,
+    user?.role,
+    ...(Array.isArray(user?.roles) ? user.roles : []),
+  ].some((role) => String(role || '').toLowerCase().includes('lab'));
 
   const request = async (path, options = {}) => {
     const response = await fetch(`/api/examination${path}`, {
@@ -65,6 +147,7 @@ function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSum
       },
     });
     const result = await response.json().catch(() => null);
+    if (response.status === 401) expireSession();
     if (!response.ok || !result?.success) {
       throw new Error(result?.message || `Request failed (${response.status}).`);
     }
@@ -78,8 +161,12 @@ function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSum
     }
     if (!dashboard) setLoading(true);
     try {
-      const data = await request('/dashboard');
+      const [data, labData] = await Promise.all([
+        request('/dashboard'),
+        activeItem === 'Lab Requests' ? request('/lab-requests') : Promise.resolve(null),
+      ]);
       setDashboard(data);
+      if (labData) setLabVisits(labData);
       const nextQueue = data.queue || [];
       setQueue(nextQueue);
       setSelectedQueueId((current) => nextQueue.some((patient) => patient.id === current) ? current : (nextQueue[0]?.id || ''));
@@ -97,12 +184,33 @@ function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSum
 
   const refreshDashboard = useEffectEvent(loadDashboard);
 
+  const activeConsultation = queue.find((patient) => patient.status === 'in_progress');
+  const activePatientRecordId = activeConsultation?.patientRecordId || '';
+  const activePatientHistory = activePatientHistoryState.patientId === activePatientRecordId
+    ? activePatientHistoryState.data
+    : null;
+
   useEffect(() => {
     const refresh = () => void refreshDashboard();
     refresh();
     const timer = window.setInterval(refresh, 30000);
     return () => window.clearInterval(timer);
-  }, [token]);
+  }, [token, activeItem]);
+
+  const loadActiveHistory = useEffectEvent(async (patientRecordId) => {
+    try {
+      const result = await request(`/patients/${patientRecordId}/history`);
+      setActivePatientHistory({ patientId: patientRecordId, data: result });
+    } catch (historyError) {
+      setError(historyError.message || 'Unable to load the active patient history.');
+    }
+  });
+
+  useEffect(() => {
+    if (!token || !activePatientRecordId) return undefined;
+    const timer = window.setTimeout(() => void loadActiveHistory(activePatientRecordId), 0);
+    return () => window.clearTimeout(timer);
+  }, [token, activePatientRecordId]);
 
   const visits = dashboard?.visits || [];
   const metricsData = dashboard?.metrics || {};
@@ -117,8 +225,52 @@ function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSum
     { value: loading ? '…' : (metricsData.completedToday ?? 0), label: 'Completed Today', icon: Check, tone: 'mint' },
     { value: loading ? '…' : (metricsData.emergency ?? 0), label: 'Emergency', icon: Siren, tone: 'rose' },
   ];
-  const labRequests = visits.flatMap((visit) => (visit.examination?.labRequests || []).map((item) => ({ ...item, patientName: visit.patientName, patientId: visit.patientId })));
-  const prescriptions = visits.flatMap((visit) => (visit.examination?.prescriptions || []).map((item) => ({ ...item, patientName: visit.patientName, patientId: visit.patientId })));
+  const labRequests = labVisits.flatMap((visit) => (visit.examination?.labRequests || []).map((item) => ({
+    ...item,
+    patientName: visit.patientRecordId?.fullName || visit.patientName,
+    patientId: visit.patientId,
+    mrn: visit.patientRecordId?.cardNumber || visit.patientId,
+    visitId: String(visit._id),
+    visitDate: visit.visitDate,
+    labRequestNumber: visit.examination?.labRequestNumber || '',
+    labStatus: visit.examination?.labStatus || item.status || 'Pending',
+    labTestedBy: visit.examination?.labTestedBy || '',
+    labDateOfReport: visit.examination?.labDateOfReport || null,
+    labApprovedBy: visit.examination?.labApprovedBy || '',
+    labApprovedAt: visit.examination?.labApprovedAt || null,
+  })));
+  const activeQueueVisit = queue.find((patient) => patient.status === 'in_progress');
+  const activeSavedVisit = activeQueueVisit
+    ? visits.find((visit) => String(visit._id) === activeQueueVisit.visitId)
+    : null;
+  const activePrescriptionVisit = activeSavedVisit
+    ? {
+      ...activeSavedVisit,
+      name: activeSavedVisit.patientName || activeQueueVisit.name,
+      cardNumber: activeSavedVisit.patientRecordId?.cardNumber || activeQueueVisit.cardNumber,
+      studentId: activeSavedVisit.patientRecordId?.universityIdNumber || activeQueueVisit.studentId,
+      governmentIdNumber: activeSavedVisit.patientRecordId?.governmentIdNumber || activeQueueVisit.governmentIdNumber,
+      telephone: activeSavedVisit.patientRecordId?.phoneNumber || activeQueueVisit.telephone,
+      region: activeSavedVisit.patientRecordId?.region || activeQueueVisit.region,
+      town: activeSavedVisit.patientRecordId?.town || activeQueueVisit.town,
+      woreda: activeSavedVisit.patientRecordId?.woreda || activeQueueVisit.woreda,
+      kebele: activeSavedVisit.patientRecordId?.kebele || activeQueueVisit.kebele,
+      patientRecordId: activeSavedVisit.patientRecordId || activePatientHistory?.patient || activeQueueVisit.patientRecordId,
+      age: activeSavedVisit.patientRecordId?.age ?? activeQueueVisit.age,
+      sex: activeSavedVisit.patientRecordId?.sex || activeQueueVisit.sex,
+    }
+    : activeQueueVisit;
+  const prescriptionHistorySource = activePatientHistory?.visits || visits;
+  const prescriptionHistory = prescriptionHistorySource
+    .filter((visit) => (visit.examination?.prescriptions || []).length > 0
+      && String(visit._id) !== activeQueueVisit?.visitId)
+    .map((visit) => ({
+      ...visit,
+      name: visit.patientName,
+      patientRecordId: activePatientHistory?.patient || visit.patientRecordId,
+      cardNumber: activePatientHistory?.patient?.cardNumber || visit.patientRecordId?.cardNumber || visit.patientId,
+    }));
+  const selectedPrescriptionHistory = prescriptionHistory.find((visit) => String(visit._id) === selectedPrescriptionHistoryId);
   const referrals = visits.filter((visit) => visit.referred || visit.examination?.referral?.department);
   const alerts = [
     ...queue.filter((patient) => patient.emergency).map((patient) => ({ tone: 'rose', icon: Siren, text: `Emergency patient: ${patient.name} (${patient.queueNumber || patient.patientId})`, time: 'In queue' })),
@@ -198,7 +350,6 @@ function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSum
   const handleSaveExamination = async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
-    const formData = new FormData(form);
     const visit = queue.find((patient) => patient.status === 'in_progress' && patient.visitId);
     if (!visit) {
       setError('Call a patient into consultation before saving an examination.');
@@ -210,26 +361,171 @@ function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSum
     try {
       await request(`/visits/${visit.visitId}/examination`, {
         method: 'POST',
-        body: JSON.stringify({
-          chiefComplaint: formData.get('chiefComplaint'),
-          historyOfPresentIllness: formData.get('historyOfPresentIllness'),
-          diagnosis: formData.get('diagnosis'),
-          vitals: {
-            bloodPressure: formData.get('bloodPressure'),
-            temperature: formData.get('temperature'),
-            pulse: formData.get('pulse'),
-          },
-          labRequests: String(formData.get('labRequests') || '').split('\n').filter(Boolean),
-          prescriptions: String(formData.get('prescriptions') || '').split('\n').filter(Boolean).map((line) => ({ medicine: line })),
-          referral: { department: formData.get('referralDepartment'), reason: formData.get('referralReason') },
-          sickLeaveDays: Number(formData.get('sickLeaveDays') || 0),
-        }),
+        body: JSON.stringify(getConsultationPayload(form)),
       });
       setNotice(`Examination saved for ${visit.name}.`);
-      form.reset();
       await loadDashboard();
+      onNavigate?.('Patient Queue');
     } catch (saveError) {
       setError(saveError.message || 'Unable to save the examination.');
+    } finally {
+      setSavingVisit(false);
+    }
+  };
+
+  const handleSaveDraft = async (form) => {
+    const visit = queue.find((patient) => patient.status === 'in_progress' && patient.visitId);
+    if (!visit || !form) return false;
+    setSavingVisit(true);
+    setError('');
+    try {
+      await request(`/visits/${visit.visitId}/examination/draft`, {
+        method: 'PATCH',
+        body: JSON.stringify(getConsultationPayload(form)),
+      });
+      setNotice(`Draft saved for ${visit.name}.`);
+      await loadDashboard();
+      return true;
+    } catch (draftError) {
+      setError(draftError.message || 'Unable to save the examination draft.');
+      return false;
+    } finally {
+      setSavingVisit(false);
+    }
+  };
+
+  const handleSubmitPrescription = async (prescription) => {
+    const visit = queue.find((patient) => patient.status === 'in_progress' && patient.visitId);
+    if (!visit) {
+      setError('Call a patient into consultation before submitting a prescription.');
+      return;
+    }
+    setSavingVisit(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await request(`/visits/${visit.visitId}/prescriptions`, {
+        method: 'POST',
+        body: JSON.stringify(prescription),
+      });
+      setNotice(result?.message || `Prescription submitted for ${visit.name}.`);
+      await loadDashboard();
+    } catch (submitError) {
+      setError(submitError.message || 'Unable to submit the prescription.');
+    } finally {
+      setSavingVisit(false);
+    }
+  };
+
+  const handleLabFormSubmit = async ({ tests, clinicalNote, priority }) => {
+    const visit = queue.find((patient) => patient.status === 'in_progress' && patient.visitId);
+    if (!visit) {
+      setError('Call a patient into consultation before submitting a lab request.');
+      return false;
+    }
+
+    const visitRecord = visits.find((record) => String(record._id) === visit.visitId);
+    const examination = visitRecord?.examination || visit.examination || {};
+    const existingRequests = examination.labRequests || [];
+    const newRequests = tests.map(({ testCode, testName }) => {
+      const previous = existingRequests.find((item) => item.testCode === testCode);
+      return {
+        ...(previous || {}),
+        testCode,
+        testName,
+        priority,
+        clinicalNote,
+      };
+    });
+    const requestCodes = new Set(newRequests.map((item) => item.testCode));
+
+    setSavingVisit(true);
+    setError('');
+    setNotice('');
+    try {
+      await request(`/visits/${visit.visitId}/examination/draft`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          chiefComplaint: examination.chiefComplaint || '',
+          historyOfPresentIllness: examination.historyOfPresentIllness || '',
+          physicalExamination: examination.physicalExamination || '',
+          reviewOfSystem: examination.reviewOfSystem || '',
+          diagnosis: visitRecord?.diagnosis || '',
+          otherDiagnosis: examination.otherDiagnosis || '',
+          hmisDiagnosis: examination.hmisDiagnosis || '',
+          doctorNotes: examination.doctorNotes || '',
+          patientCondition: examination.patientCondition || '',
+          disposition: examination.disposition || '',
+          followUpDate: examination.followUpDate || '',
+          prescriptionPatientType: examination.prescriptionPatientType || 'outpatient',
+          vitals: examination.vitals || {},
+          prescriptions: examination.prescriptions || [],
+          labRequests: [
+            ...existingRequests.filter((item) => !requestCodes.has(item.testCode)),
+            ...newRequests,
+          ],
+          opd: examination.opd || {},
+          referral: examination.referral || {},
+          sickLeaveDays: examination.sickLeaveDays || 0,
+        }),
+      });
+      setNotice(`Laboratory request saved for ${visit.name}.`);
+      await loadDashboard();
+      return true;
+    } catch (labError) {
+      setError(labError.message || 'Unable to submit the laboratory request.');
+      return false;
+    } finally {
+      setSavingVisit(false);
+    }
+  };
+
+  const handleLabProcessingUpdate = async ({ visitId, action }) => {
+    setSavingVisit(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await request(`/visits/${visitId}/lab-status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action }),
+      });
+      setNotice(result?.message || 'Laboratory status updated.');
+      await loadDashboard();
+    } catch (labError) {
+      setError(labError.message || 'Unable to update laboratory status.');
+    } finally {
+      setSavingVisit(false);
+    }
+  };
+
+  const handleSaveLabResults = async ({ visitId, results, dateOfReport }) => {
+    setSavingVisit(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await request(`/visits/${visitId}/lab-results`, {
+        method: 'PUT',
+        body: JSON.stringify({ results, dateOfReport }),
+      });
+      setNotice(result?.message || 'Laboratory results saved.');
+      await loadDashboard();
+    } catch (labError) {
+      setError(labError.message || 'Unable to save laboratory results.');
+    } finally {
+      setSavingVisit(false);
+    }
+  };
+
+  const handleApproveLabResults = async (visitId) => {
+    setSavingVisit(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await request(`/visits/${visitId}/lab-results/approve`, { method: 'POST' });
+      setNotice(result?.message || 'Laboratory results approved.');
+      await loadDashboard();
+    } catch (labError) {
+      setError(labError.message || 'Unable to approve laboratory results.');
     } finally {
       setSavingVisit(false);
     }
@@ -330,35 +626,32 @@ function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSum
 
   if (activeItem === 'Current Consultation') {
     const currentVisit = queue.find((patient) => patient.status === 'in_progress');
+    const consultationPatient = currentVisit ? {
+      ...currentVisit,
+      ...activeSavedVisit,
+      visitId: currentVisit.visitId,
+      patientRecordId: activeSavedVisit?.patientRecordId || currentVisit.patientRecordId,
+      examination: activeSavedVisit?.examination || currentVisit.examination || {},
+      name: currentVisit.name,
+      patientId: activeSavedVisit?.patientRecordId?.cardNumber || currentVisit.cardNumber || currentVisit.patientId,
+    } : null;
     return (
-      <section className="mx-auto max-w-4xl space-y-4">
-        <div><h1 className="text-2xl font-bold text-slate-900">Current Consultation</h1><p className="mt-1 text-sm text-slate-500">Record the consultation and complete the active queue entry.</p></div>
-        {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-        {notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-        {!currentVisit ? <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">No consultation is active. Select a waiting patient and choose <strong>Call</strong> to begin.</div> : (
-          <form onSubmit={handleSaveExamination} className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <div className="rounded-md bg-blue-50 p-3"><p className="text-xs font-semibold uppercase text-blue-700">Now examining</p><p className="mt-1 text-lg font-bold">{currentVisit.name}</p><p className="text-sm text-slate-600">{currentVisit.studentId} · Queue {currentVisit.queueNumber || '—'}</p></div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="text-sm font-medium">Blood pressure<input name="bloodPressure" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" placeholder="120/80" /></label>
-              <label className="text-sm font-medium">Temperature<input name="temperature" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" placeholder="36.8 C" /></label>
-              <label className="text-sm font-medium">Pulse<input name="pulse" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" placeholder="72 bpm" /></label>
-            </div>
-            <label className="block text-sm font-medium">Chief complaint *<textarea name="chiefComplaint" required maxLength={1000} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" rows="2" /></label>
-            <label className="block text-sm font-medium">History of present illness<textarea name="historyOfPresentIllness" maxLength={3000} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" rows="3" /></label>
-            <label className="block text-sm font-medium">Diagnosis *<input name="diagnosis" required maxLength={500} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" /></label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-sm font-medium">Lab tests, one per line<textarea name="labRequests" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" rows="3" /></label>
-              <label className="text-sm font-medium">Prescriptions, one medicine per line<textarea name="prescriptions" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" rows="3" /></label>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[1fr_2fr_160px]">
-              <label className="text-sm font-medium">Referral department<input name="referralDepartment" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" /></label>
-              <label className="text-sm font-medium">Referral reason<input name="referralReason" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" /></label>
-              <label className="text-sm font-medium">Sick leave (days)<input name="sickLeaveDays" type="number" min="0" max="365" defaultValue="0" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" /></label>
-            </div>
-            <button type="submit" disabled={savingVisit} className="rounded-md bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">{savingVisit ? 'Saving…' : 'Save examination and complete visit'}</button>
-          </form>
-        )}
-      </section>
+      <CurrentConsultation
+        key={currentVisit?.visitId || currentVisit?.id || 'no-active-consultation'}
+        patient={consultationPatient}
+        history={activePatientHistory}
+        alerts={alerts}
+        onSave={handleSaveExamination}
+        onDraft={handleSaveDraft}
+        onNavigate={onNavigate}
+        onCallPatient={(patient) => void runQueueAction(patient, 'call')}
+        waitingPatients={queue.filter((patient) => patient.status === 'sent_to_examination')}
+        busyQueueId={busyQueueId}
+        loading={loading}
+        saving={savingVisit}
+        error={error}
+        notice={notice}
+      />
     );
   }
 
@@ -381,14 +674,119 @@ function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSum
     );
   }
 
-  if (activeItem === 'Lab Requests' || activeItem === 'Prescriptions' || activeItem === 'Referrals' || activeItem === 'Reports') {
+  if (activeItem === 'Lab Requests') {
+    const activeLabPatient = activeQueueVisit ? {
+      ...activeQueueVisit,
+      patientName: activeQueueVisit.name,
+      visitDate: activeQueueVisit.arrivedAt,
+    } : null;
+    return (
+      <LabRequestForm
+        patient={activeLabPatient}
+        requestBy={user?.name || ''}
+        requests={labRequests}
+        onSubmit={handleLabFormSubmit}
+        onUpdateProcessing={handleLabProcessingUpdate}
+        onSaveResults={handleSaveLabResults}
+        onApproveResults={handleApproveLabResults}
+        canProcessResults={canProcessLabResults}
+        onOpenQueue={() => onNavigate?.('Patient Queue')}
+        submitting={savingVisit}
+        error={error}
+        notice={notice}
+      />
+    );
+  }
+
+  if (activeItem === 'Prescriptions' || activeItem === 'Referrals' || activeItem === 'Reports') {
     const reportItems = activeItem === 'Reports';
-    const records = activeItem === 'Lab Requests' ? labRequests : activeItem === 'Prescriptions' ? prescriptions : activeItem === 'Referrals' ? referrals : metricsData.topDiagnoses || [];
+    if (activeItem === 'Prescriptions') {
+      return (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Prescriptions &amp; Dispensing</h1>
+              <p className="mt-1 text-sm text-slate-500">Complete a prescription for the active consultation and review previous prescriptions.</p>
+            </div>
+            <button type="button" onClick={() => onNavigate?.('Patient Queue')} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800">Open Patient Queue</button>
+          </div>
+          <section aria-labelledby="prescription-workflow-title" className="rounded-lg border border-sky-200 bg-sky-50 p-4">
+            <h2 id="prescription-workflow-title" className="font-bold text-sky-950">የመድኃኒት ማዘዣ እና ማደል ሂደት</h2>
+            <ol className="mt-3 grid gap-3 md:grid-cols-3">
+              <li className="rounded-md border border-sky-100 bg-white p-3">
+                <h3 className="text-sm font-bold text-slate-900">1. Pending Prescriptions Queue</h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">ዶክተሩ ከታካሚው ምርመራ በኋላ ማዘዣውን ሲያስገባ ወደ ፋርማሲ ወረፋ ይላካል። ፋርማሲስቱ የታካሚውን ስም፣ MRN፣ Student ID፣ መድኃኒቶችን፣ መጠንና ቆይታ ይመለከታል፤ አለርጂ ካለም የጥንቃቄ ማስጠንቀቂያ ይታያል።</p>
+              </li>
+              <li className="rounded-md border border-sky-100 bg-white p-3">
+                <h3 className="text-sm font-bold text-slate-900">2. Stock Availability Check</h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">ትዕዛዙ ሲከፈት የመድኃኒቱ ክምችት ይመረመራል። ከክምችት ውጭ ከሆነ <strong>Out of stock</strong> የሚል ማሳወቂያ ይታያል።</p>
+              </li>
+              <li className="rounded-md border border-sky-100 bg-white p-3">
+                <h3 className="text-sm font-bold text-slate-900">3. Dispensing &amp; History</h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">ፋርማሲስቱ ትዕዛዙን ካረጋገጠ በኋላ መድኃኒቱን ይሰጣል። ሁኔታው <strong>Pending</strong> ከሚለው ወደ <strong>Dispensed</strong> ይቀየራል፣ እና ሂደቱ በታካሚው የሕክምና ታሪክ ውስጥ ይመዘገባል።</p>
+              </li>
+            </ol>
+          </section>
+          {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
+          {notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
+          {loading && !dashboard && <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">Loading prescription records…</p>}
+          {!activePrescriptionVisit ? (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-amber-200 bg-amber-50 p-5">
+              <div>
+                <h2 className="font-bold text-amber-950">Call a patient into Current Consultation before submitting a request.</h2>
+                <p className="mt-1 text-sm text-amber-900">Select a patient from the Examination Room queue to create a prescription.</p>
+              </div>
+              <button type="button" onClick={() => onNavigate?.('Patient Queue')} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800">Open Patient Queue</button>
+            </div>
+          ) : (
+            <div className="grid min-w-0 items-start gap-4 2xl:grid-cols-[minmax(0,2.2fr)_minmax(280px,0.8fr)]">
+              <PrescriptionPaper
+                key={`${activePrescriptionVisit._id || activePrescriptionVisit.visitId}:${JSON.stringify(activePrescriptionVisit.examination?.prescriptions || [])}:${activePrescriptionVisit.examination?.vitals?.weight || ''}:${activePrescriptionVisit.diagnosis || ''}:${activePrescriptionVisit.examination?.prescriptionPatientType || ''}`}
+                visit={activePrescriptionVisit}
+                doctor={user}
+                onSubmit={!['Dispensed', 'Partially dispensed', 'Cancelled'].includes(activePrescriptionVisit.examination?.prescriptionStatus)
+                  ? handleSubmitPrescription
+                  : undefined}
+                saving={savingVisit}
+              />
+              <aside className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                <div>
+                  <h2 className="font-bold text-slate-900">Previous prescriptions</h2>
+                  <p className="mt-1 text-xs text-slate-500">{activePrescriptionVisit.name} · current status and history</p>
+                </div>
+                {prescriptionHistory.map((visit) => (
+                  <article key={visit._id} className="rounded-md border border-slate-200 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{formatDate(visit.visitDate)}</p>
+                        <p className="text-xs text-slate-500">{visit.diagnosis || 'Diagnosis not recorded'}</p>
+                      </div>
+                      <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-800">{visit.examination?.prescriptionStatus || 'Pending'}</span>
+                    </div>
+                    <ul className="mt-2 space-y-1 text-xs text-slate-600">
+                      {visit.examination.prescriptions.map((item, index) => <li key={item._id || `${item.medicine}-${index}`}>{item.medicine} {item.strength} · {item.frequency} · {item.duration}</li>)}
+                    </ul>
+                    <button type="button" onClick={() => setSelectedPrescriptionHistoryId(String(visit._id))} className="mt-2 text-xs font-semibold text-blue-700 hover:underline">View / Print paper</button>
+                  </article>
+                ))}
+                {!prescriptionHistory.length && <p className="rounded bg-slate-50 p-3 text-xs text-slate-500">No previous prescriptions are recorded for this patient.</p>}
+              </aside>
+            </div>
+          )}
+          {selectedPrescriptionHistory && <PrescriptionPaper
+            key={String(selectedPrescriptionHistory._id)}
+            visit={selectedPrescriptionHistory}
+            doctor={user}
+          />}
+        </section>
+      );
+    }
+    const records = activeItem === 'Referrals' ? referrals : metricsData.topDiagnoses || [];
     return (
       <section className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-2xl font-bold text-slate-900">{activeItem}</h1><p className="mt-1 text-sm text-slate-500">{dashboard?.department || 'Examination Room'} · today</p></div>{!reportItems && <button type="button" onClick={() => onNavigate?.('Current Consultation')} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800">Add from consultation</button>}</div>
         <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
-          {records.map((record, index) => <article key={record._id || `${record.patientId}-${index}`} className="flex flex-wrap items-center justify-between gap-2 p-4 text-sm"><div><p className="font-semibold">{reportItems ? record.name : activeItem === 'Referrals' ? record.examination?.referral?.department : activeItem === 'Lab Requests' ? record.testName : record.medicine}</p><p className="mt-1 text-xs text-slate-500">{reportItems ? `${record.count} visits` : `${record.patientName || record.patientId} · ${record.status || record.examination?.referral?.reason || record.dosage || ''}`}</p></div>{activeItem === 'Referrals' && <span className="text-xs text-slate-500">{record.examination?.referral?.reason}</span>}</article>)}
+          {records.map((record, index) => <article key={record._id || `${record.patientId}-${index}`} className="flex flex-wrap items-center justify-between gap-2 p-4 text-sm"><div><p className="font-semibold">{reportItems ? record.name : record.examination?.referral?.department}</p><p className="mt-1 text-xs text-slate-500">{reportItems ? `${record.count} visits` : `${record.patientName || record.patientId} · ${record.examination?.referral?.reason || ''}`}</p></div>{activeItem === 'Referrals' && <span className="text-xs text-slate-500">{record.examination?.referral?.reason}</span>}</article>)}
           {!records.length && <p className="p-6 text-sm text-slate-500">No {activeItem.toLowerCase()} recorded today.</p>}
         </div>
       </section>

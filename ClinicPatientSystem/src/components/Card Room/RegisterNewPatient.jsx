@@ -20,11 +20,13 @@ const emptyForm = {
   phoneNumber: '',
   patientCategory: 'Student',
   region: '',
+  town: '',
   woreda: '',
   kebele: '',
   dormBlock: '',
   houseNumber: '',
   universityIdNumber: '',
+  allergies: '',
   departmentFaculty: '',
 };
 
@@ -123,7 +125,7 @@ function SelectField({ label, name, value, onChange, required = false, disabled 
 function PatientCard({ patient, onPrint }) {
   const fullName = patient.fullName
     || [patient.firstName, patient.fatherName, patient.grandfatherName].filter(Boolean).join(' ');
-  const address = [patient.region, patient.woreda, patient.kebele, patient.houseNumber]
+  const address = [patient.region, patient.town, patient.woreda, patient.kebele, patient.houseNumber]
     .filter(Boolean)
     .join(', ') || patient.address;
   const fields = [
@@ -448,6 +450,10 @@ export default function RegisterNewPatient() {
                   </SelectField>
                   {errors.sex && <p className="mt-1 text-xs text-rose-700">{errors.sex}</p>}
                   </div>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Known allergies (separate multiple entries with commas)
+                    <textarea name="allergies" value={form.allergies} onChange={setField} maxLength={1000} rows={2} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. Penicillin, latex" />
+                  </label>
                   <div>
                   <Field label="Date of Birth" name="dateOfBirth" type="date" value={form.dateOfBirth} onChange={setField} required max={currentDate} aria-invalid={Boolean(errors.dateOfBirth)} />
                   {errors.dateOfBirth && <p className="mt-1 text-xs text-rose-700">{errors.dateOfBirth}</p>}
@@ -478,6 +484,7 @@ export default function RegisterNewPatient() {
                 <Field label="Dorm Block / Room No." name="dormBlock" value={form.dormBlock} onChange={setField} maxLength={80} />
                 <Field label="Kebele" name="kebele" value={form.kebele} onChange={setField} maxLength={100} />
                 <Field label="Woreda / Subcity" name="woreda" value={form.woreda} onChange={setField} maxLength={100} />
+                <Field label="Town" name="town" value={form.town} onChange={setField} maxLength={100} />
                 <Field label="House Number" name="houseNumber" value={form.houseNumber} onChange={setField} maxLength={40} />
                 <Field label="Region (Optional)" name="region" value={form.region} onChange={setField} maxLength={100} />
               </div>

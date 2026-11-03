@@ -4,6 +4,8 @@ const clinicDispensingLogSchema = new mongoose.Schema({
   medicineId: { type: mongoose.Schema.Types.ObjectId, default: null },
   medicineName: { type: String, required: true, trim: true },
   quantityDispensed: { type: Number, required: true, min: 0 },
+  batchNumber: { type: String, trim: true, default: '' },
+  expiryDate: { type: Date, default: null },
   department: { type: String, trim: true, default: '' },
   dispensedToPatientId: { type: String, default: '' },
   dispensedByDoctorOrPharmacist: { type: String, default: '' },

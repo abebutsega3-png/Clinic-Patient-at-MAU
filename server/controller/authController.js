@@ -134,6 +134,9 @@ export const login = async (req, res) => {
         roles: user.roles || [],
         department: user.department,
         position: user.position,
+        qualification: user.qualification || '',
+        registration: user.registrationNo || user.registration || user.licenseNumber || '',
+        registrationNo: user.registrationNo || user.registration || user.licenseNumber || '',
         mustChangePassword: user.mustChangePassword
       }
     });
@@ -162,7 +165,7 @@ export const logout = async (req, res) => {
 export const getCurrentUser = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
-      .select('name username email phoneNumber alternativePhone role activeRole department position employeeId dateJoined status profileImage createdAt lastLogin')
+      .select('name username email phoneNumber alternativePhone role activeRole department position qualification registration registrationNo licenseNumber employeeId dateJoined status profileImage createdAt lastLogin')
       .lean();
     if (!user) return res.status(404).json({ success: false, message: 'User profile not found.' });
     return res.status(200).json({ success: true, data: user });
@@ -174,6 +177,12 @@ export const getCurrentUser = async (req, res) => {
 
 export const updateCurrentUserProfile = async (req, res) => {
   const phoneNumber = typeof req.body.phoneNumber === 'string' ? req.body.phoneNumber.trim() : '';
+  const qualificationProvided = typeof req.body.qualification === 'string';
+  const registrationProvided = typeof req.body.registrationNo === 'string' || typeof req.body.registration === 'string';
+  const qualification = qualificationProvided ? req.body.qualification.trim() : '';
+  const registrationNo = typeof req.body.registrationNo === 'string'
+    ? req.body.registrationNo.trim()
+    : typeof req.body.registration === 'string' ? req.body.registration.trim() : '';
   const profileImage = typeof req.body.profileImage === 'string' ? req.body.profileImage : '';
   const imagePattern = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
   try {
@@ -182,27 +191,34 @@ export const updateCurrentUserProfile = async (req, res) => {
     if (
       phoneNumber.length > 30
       || (phoneNumber && !/^[+()\d\s-]{6,30}$/.test(phoneNumber))
+      || qualification.length > 120
+      || registrationNo.length > 120
       || profileImage.length > 700000
       || (profileImage && profileImage !== user.profileImage && !imagePattern.test(profileImage))
     ) {
       return res.status(400).json({
         success: false,
-        message: 'Provide a valid phone number and a PNG, JPEG or WebP profile photo smaller than 500 KB.'
+        message: 'Provide valid phone, qualification, registration, and a PNG, JPEG or WebP profile photo smaller than 500 KB.'
       });
     }
 
     user.phoneNumber = phoneNumber;
+    if (qualificationProvided) user.qualification = qualification;
+    if (registrationProvided) {
+      user.registration = registrationNo;
+      user.registrationNo = registrationNo;
+    }
     user.profileImage = profileImage;
     await user.save();
     await writeAuditEvent({
       req,
       action: 'AUTH_PROFILE_UPDATED',
-      details: 'User updated their phone number or profile photo.',
+      details: 'User updated their phone number, professional credentials, or profile photo.',
       entityType: 'user',
       entityId: user._id
     });
     const profile = await User.findById(user._id)
-      .select('name username email phoneNumber alternativePhone role activeRole department position employeeId dateJoined status profileImage createdAt lastLogin')
+      .select('name username email phoneNumber alternativePhone role activeRole department position qualification registration registrationNo licenseNumber employeeId dateJoined status profileImage createdAt lastLogin')
       .lean();
     return res.status(200).json({ success: true, data: profile, message: 'Profile changes saved.' });
   } catch (error) {

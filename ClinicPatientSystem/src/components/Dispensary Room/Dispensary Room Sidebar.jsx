@@ -1,97 +1,113 @@
+import React from 'react';
 import {
   BarChart3,
   ChevronRight,
   ClipboardList,
   LayoutDashboard,
   Package,
-  Pill,
   ReceiptText,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 const navigationGroups = [
   {
+    id: 'prescriptions',
     label: 'Prescriptions & Dispensing',
     icon: ClipboardList,
-    items: [
-      { label: 'Pending Orders (Queue)', path: '/dispensary/pending-orders' },
-      { label: 'Dispense Medicine', path: '/dispensary/dispense' },
-      { label: 'Dispensing History', path: '/dispensary/history' },
-    ],
+    path: '/dispensary/pending-orders',
   },
   {
+    id: 'inventory',
     label: 'Dispensary Inventory',
     icon: Package,
-    items: [
-      { label: 'Stock List', path: '/dispensary/stock' },
-      { label: 'Batch & Expiry Tracker', path: '/dispensary/batches' },
-      { label: 'Low Stock Alerts', path: '/dispensary/low-stock' },
-    ],
+    path: '/dispensary/stock',
   },
   {
+    id: 'requisition',
     label: 'Store Requisition',
     icon: ReceiptText,
-    items: [
-      { label: 'New Request to Store', path: '/dispensary/requisitions/new' },
-      { label: 'Request History', path: '/dispensary/requisitions' },
-    ],
+    path: '/dispensary/requisitions',
   },
   {
+    id: 'reports',
     label: 'Reports',
     icon: BarChart3,
-    items: [
-      { label: 'Daily Sales/Issue Log', path: '/dispensary/reports/daily' },
-      { label: 'Expiry Report', path: '/dispensary/reports/expiry' },
-    ],
+    path: '/dispensary/reports/daily',
   },
 ];
 
-const DispensaryRoomSidebar = ({ isOpen = true, onNavigate }) => (
-  <aside className={`fixed left-0 top-0 z-30 flex h-screen w-64 flex-col overflow-hidden bg-gradient-to-b from-blue-950 to-slate-950 text-slate-300 shadow-xl transition-transform duration-200 ${isOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
-    <div className="flex items-center gap-3 border-b border-blue-800/60 px-5 py-5 text-white">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600">
-        <Pill size={21} aria-hidden="true" />
-      </div>
-      <div>
-        <h2 className="text-sm font-bold tracking-wide">PHARMACY / DISPENSARY</h2>
-        <span className="text-[11px] font-medium text-blue-200">Bahir Dar University</span>
-      </div>
-    </div>
-
-    <nav aria-label="Pharmacy and Dispensary navigation" className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
-      <NavLink
-        to="/dispensary"
-        end
-        onClick={onNavigate}
-        className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-blue-900/70 hover:text-white'}`}
-      >
-        <LayoutDashboard size={18} className="shrink-0" aria-hidden="true" />
-        <span>Dispensary Dashboard</span>
-      </NavLink>
-
-      {navigationGroups.map(({ label, icon: Icon, items }) => (
-        <section key={label} aria-label={label}>
-          <h3 className="mb-1 flex items-center gap-2 px-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-            <Icon size={15} aria-hidden="true" />
-            {label}
-          </h3>
-          <div className="ml-5 space-y-0.5 border-l border-slate-800 pl-2">
-            {items.map(({ label: itemLabel, path }) => (
-              <NavLink
-                key={path}
-                to={path}
-                onClick={onNavigate}
-                className={({ isActive }) => `flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition ${isActive ? 'bg-blue-600/25 text-blue-100' : 'text-slate-400 hover:bg-blue-900/70 hover:text-white'}`}
-              >
-                <ChevronRight size={13} aria-hidden="true" className="shrink-0 text-slate-600" />
-                <span>{itemLabel}</span>
-              </NavLink>
-            ))}
+const DispensaryRoomSidebar = ({ isOpen = true, onNavigate }) => {
+  return (
+    <aside
+      className={`fixed left-0 top-0 z-30 flex h-screen w-64 flex-col overflow-hidden bg-[#0B1E36] text-slate-300 shadow-xl transition-transform duration-200 ${
+        isOpen ? 'translate-x-0' : '-translate-x-full'
+      } lg:translate-x-0`}
+    >
+      {/* 1. Header & MAU Branding */}
+      <div className="flex items-center gap-3 border-b border-slate-700/60 px-5 py-4 text-white">
+        <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center p-1 border border-amber-400/50 flex-shrink-0">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center text-[#0B1E36] font-bold text-xs shadow">
+            MAU
           </div>
-        </section>
-      ))}
-    </nav>
-  </aside>
-);
+        </div>
+        <div>
+          <h2 className="text-xs font-bold tracking-wide leading-tight">PHARMACY / DISPENSARY</h2>
+          <p className="text-[11px] text-amber-400 font-medium leading-tight">Mekdela Amba University</p>
+        </div>
+      </div>
+
+      {/* 2. Navigation Menu */}
+      <nav aria-label="Pharmacy and Dispensary navigation" className="flex-1 space-y-2 overflow-y-auto px-3 py-4">
+        {/* Main Dashboard Link */}
+        <NavLink
+          to="/dispensary"
+          end
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            `flex items-center justify-between rounded-lg px-3 py-2.5 text-xs font-semibold transition ${
+              isActive
+                ? 'bg-sky-600 text-white shadow-md'
+                : 'text-slate-300 hover:bg-[#162A45] hover:text-white'
+            }`
+          }
+        >
+          <div className="flex items-center gap-3">
+            <LayoutDashboard size={16} className="shrink-0" aria-hidden="true" />
+            <span>Dispensary Dashboard</span>
+          </div>
+          <ChevronRight size={14} className="text-slate-400" />
+        </NavLink>
+
+        {/* Categories Links (No sub-items array) */}
+        {navigationGroups.map(({ id, label, icon: Icon, path }) => (
+          <NavLink
+            key={id}
+            to={path}
+            onClick={onNavigate}
+            className={({ isActive }) =>
+              `flex items-center justify-between rounded-lg px-3 py-2.5 text-xs font-semibold transition ${
+                isActive
+                  ? 'bg-sky-600 text-white shadow-md'
+                  : 'text-slate-300 hover:bg-[#162A45] hover:text-white'
+              }`
+            }
+          >
+            <div className="flex items-center gap-3">
+              <Icon size={16} className="shrink-0 text-sky-400" aria-hidden="true" />
+              <span>{label}</span>
+            </div>
+            <ChevronRight size={14} className="text-slate-400" />
+          </NavLink>
+        ))}
+      </nav>
+
+      {/* 3. Footer Branding */}
+      <div className="border-t border-slate-800 bg-[#071324] p-3 text-center">
+        <p className="text-[11px] font-semibold text-slate-200">Mekdela Amba University</p>
+        <p className="text-[10px] font-bold text-amber-400 italic">( MAU Clinic )</p>
+      </div>
+    </aside>
+  );
+};
 
 export default DispensaryRoomSidebar;

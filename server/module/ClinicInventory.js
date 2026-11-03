@@ -12,7 +12,9 @@ const clinicInventorySchema = new mongoose.Schema({
   expiryDate: { type: Date, default: null },
   batches: [{
     batchNumber: { type: String, trim: true, default: '' },
+    serialNumber: { type: String, trim: true, default: '' },
     quantity: { type: Number, min: 0, default: 0 },
+    unitPrice: { type: Number, min: 0, default: 0 },
     expiryDate: { type: Date, default: null }
   }]
 }, { timestamps: true });

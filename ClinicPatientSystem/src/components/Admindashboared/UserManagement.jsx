@@ -26,6 +26,8 @@ const initialForm = {
   email: '',
   employeeId: '',
   phoneNumber: '',
+  qualification: '',
+  registrationNo: '',
   password: '',
   confirmPassword: '',
   gender: '',
@@ -170,6 +172,8 @@ const UserManagement = () => {
       email: user.email || '',
       employeeId: user.employeeId || '',
       phoneNumber: user.phoneNumber || '',
+      qualification: user.qualification || '',
+      registrationNo: user.registrationNo || user.registration || user.licenseNumber || '',
       gender: user.gender || '',
       dateOfBirth: user.dateOfBirth || '',
       role: user.role || '',
@@ -531,6 +535,12 @@ const UserManagement = () => {
                     <input type="tel" maxLength="30" autoComplete="tel" value={form.phoneNumber} onChange={(event) => setForm({ ...form, phoneNumber: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" />
                     <span className="mt-1 block text-xs font-normal text-slate-500">Provide an email address or phone number.</span>
                   </label>
+                  <label className="text-sm font-medium text-slate-700">Professional qualification
+                    <input maxLength="120" value={form.qualification} onChange={(event) => setForm({ ...form, qualification: event.target.value })} placeholder="e.g. General Practitioner" className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" />
+                  </label>
+                  <label className="text-sm font-medium text-slate-700">Professional registration number
+                    <input maxLength="120" value={form.registrationNo} onChange={(event) => setForm({ ...form, registrationNo: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" />
+                  </label>
                   <label className="text-sm font-medium text-slate-700">Staff / employee ID
                     <input maxLength="50" value={form.employeeId} onChange={(event) => setForm({ ...form, employeeId: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" />
                   </label>
@@ -576,6 +586,12 @@ const UserManagement = () => {
                           </label>
                           <label className="text-xs font-semibold text-slate-700">Phone number
                             <input type="tel" pattern="(09[0-9]{8}|\+2519[0-9]{8})" title="Use 09 followed by 8 digits, or +2519 followed by 8 digits." placeholder="09XXXXXXXX or +2519XXXXXXXX" required={!form.email} maxLength="13" autoComplete="tel" value={form.phoneNumber} onChange={(event) => setForm({ ...form, phoneNumber: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-normal focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                          </label>
+                          <label className="text-xs font-semibold text-slate-700">Professional qualification
+                            <input maxLength="120" value={form.qualification} onChange={(event) => setForm({ ...form, qualification: event.target.value })} placeholder="e.g. General Practitioner" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-normal" />
+                          </label>
+                          <label className="text-xs font-semibold text-slate-700">Professional registration number
+                            <input maxLength="120" value={form.registrationNo} onChange={(event) => setForm({ ...form, registrationNo: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-normal" />
                           </label>
                           <label className="text-xs font-semibold text-slate-700">Gender <span className="text-rose-600">*</span>
                             <select required value={form.gender} onChange={(event) => setForm({ ...form, gender: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal">
@@ -698,6 +714,8 @@ const UserManagement = () => {
                   <p><span className="text-slate-500">Role:</span> <strong>{selectedUser.role === 'Admin' ? 'System Admin' : selectedUser.role}</strong></p>
                   <p><span className="text-slate-500">Department:</span> <strong>{selectedUser.department || '—'}</strong></p>
                   <p><span className="text-slate-500">Phone:</span> <strong>{selectedUser.phoneNumber || '—'}</strong></p>
+                  <p><span className="text-slate-500">Qualification:</span> <strong>{selectedUser.qualification || '—'}</strong></p>
+                  <p><span className="text-slate-500">Registration:</span> <strong>{selectedUser.registrationNo || selectedUser.registration || selectedUser.licenseNumber || '—'}</strong></p>
                   <p><span className="text-slate-500">Status:</span> <strong>{selectedUser.status}</strong></p>
                   <p><span className="text-slate-500">Date joined:</span> <strong>{formatDate(selectedUser.dateJoined || selectedUser.createdAt)}</strong></p>
                   <p><span className="text-slate-500">Created:</span> <strong>{formatDate(selectedUser.createdAt)}</strong></p>

@@ -99,6 +99,27 @@ export const defaultRolesAndPermissions = [
     ],
   },
   {
+    roleName: 'Examination Room',
+    displayName: 'Examination Room Clinician',
+    description: 'Manages the examination queue, reviews patient records, documents consultations, and places clinical orders.',
+    responsibilities: 'Reviews patient records, examines patients, records diagnoses, and coordinates laboratory work, prescriptions, and referrals.',
+    reports: 'Own-department reports and exports.',
+    isLocked: false,
+    permissions: [
+      'dashboard:view',
+      'patients:view',
+      'visits_queue:view', 'visits_queue:send',
+      'department_routing:view', 'department_routing:send',
+      'clinical_records:view', 'clinical_records:create', 'clinical_records:edit',
+      'prescriptions:view', 'prescriptions:create', 'prescriptions:edit',
+      'lab_requests:view', 'lab_requests:create',
+      'lab_results:view',
+      'injection_dressing:view', 'injection_dressing:create',
+      'referrals:view', 'referrals:create',
+      'reports:own:view', 'reports:own:export',
+    ],
+  },
+  {
     roleName: 'Lab Technician',
     displayName: 'Laboratory Technician',
     description: 'Reviews laboratory requests, processes samples, and records results for the ordering clinician.',
@@ -228,6 +249,34 @@ export const seedRolesAndPermissions = async () => {
             'dashboard:view',
             'patients:view', 'patients:create', 'patients:edit',
             'reports:own:view', 'reports:own:export',
+          ],
+        },
+      },
+    },
+  );
+  const examinationRoomRole = defaultRolesAndPermissions.find(
+    (role) => role.roleName === 'Examination Room',
+  );
+  await RolePermission.updateOne(
+    { roleName: 'Examination Room' },
+    {
+      $addToSet: {
+        permissions: { $each: examinationRoomRole.permissions },
+      },
+    },
+  );
+  await RolePermission.updateOne(
+    { roleName: 'Doctor' },
+    {
+      $addToSet: {
+        permissions: {
+          $each: [
+            'dashboard:view',
+            'patients:view',
+            'visits_queue:view',
+            'visits_queue:send',
+            'clinical_records:view',
+            'clinical_records:create',
           ],
         },
       },

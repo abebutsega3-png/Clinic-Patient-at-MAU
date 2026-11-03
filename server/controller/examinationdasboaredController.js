@@ -10,6 +10,150 @@ const activeQueueStatuses = ['sent_to_examination', 'in_progress'];
 const priorityOrder = { Emergency: 0, Urgent: 1, Normal: 2 };
 const trimString = (value, limit = 500) => (typeof value === 'string' ? value.trim().slice(0, limit) : '');
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const cleanList = (value, fields, limit, maxEntries = 30) => (Array.isArray(value) ? value.slice(0, maxEntries).map((entry) => {
+  if (typeof entry === 'string') return { [fields[0]]: trimString(entry, limit) };
+  if (!entry || typeof entry !== 'object') return null;
+  return Object.fromEntries(fields.map((field) => [field, trimString(entry[field], limit)]));
+}).filter((entry) => entry && Object.values(entry).some(Boolean)) : []);
+
+const getExaminationData = (body = {}) => {
+  const referral = body.referral || {};
+  const opd = body.opd || {};
+  return {
+    chiefComplaint: trimString(body.chiefComplaint, 1000),
+    historyOfPresentIllness: trimString(body.historyOfPresentIllness, 3000),
+    physicalExamination: trimString(body.physicalExamination, 3000),
+    reviewOfSystem: trimString(body.reviewOfSystem, 3000),
+    otherDiagnosis: trimString(body.otherDiagnosis, 500),
+    hmisDiagnosis: trimString(body.hmisDiagnosis, 100).toUpperCase(),
+    doctorNotes: trimString(body.doctorNotes, 3000),
+    patientCondition: trimString(body.patientCondition, 40),
+    disposition: trimString(body.disposition, 40),
+    followUpDate: trimString(body.followUpDate, 20),
+    prescriptionPatientType: body.prescriptionPatientType === 'inpatient' ? 'inpatient' : 'outpatient',
+    prescriber: {},
+    vitals: {
+      bloodPressure: trimString(body.vitals?.bloodPressure, 30),
+      temperature: trimString(body.vitals?.temperature, 30),
+      pulse: trimString(body.vitals?.pulse, 30),
+      respiratoryRate: trimString(body.vitals?.respiratoryRate, 30),
+      weight: trimString(body.vitals?.weight, 30),
+    },
+    labRequests: cleanList(body.labRequests, ['testName', 'testCode', 'priority', 'clinicalNote'], 1000, 60)
+      .map((item) => ({ ...item, priority: item.priority === 'urgent' ? 'urgent' : 'normal', status: 'Pending' })),
+    prescriptions: cleanList(body.prescriptions, [
+      'medicine', 'strength', 'form', 'dose', 'dosage', 'frequency', 'duration', 'quantity', 'quantityUnit', 'instructions',
+    ], 300),
+    opd: {
+      roadTrafficAccident: Boolean(opd.roadTrafficAccident),
+      accidentType: trimString(opd.accidentType, 100),
+      hivTestOffered: Boolean(opd.hivTestOffered),
+      hivTestPerformed: Boolean(opd.hivTestPerformed),
+      hivResult: trimString(opd.hivResult, 100),
+      targetPopulation: trimString(opd.targetPopulation, 200),
+      tbScreened: Boolean(opd.tbScreened),
+      tbResult: trimString(opd.tbResult, 200),
+      diagnosticEvaluation: trimString(opd.diagnosticEvaluation, 200),
+      referredTo: trimString(opd.referredTo, 200),
+    },
+    referral: {
+      department: trimString(referral.department, 120),
+      reason: trimString(referral.reason, 1000),
+      qualification: trimString(referral.qualification, 120),
+      emergency: Boolean(referral.emergency),
+      ambulanceDriver: trimString(referral.ambulanceDriver, 120),
+      takeOffTime: trimString(referral.takeOffTime, 20),
+      remark: trimString(referral.remark, 1000),
+      referredAt: referral.department ? new Date() : null,
+    },
+    sickLeaveDays: Number(body.sickLeaveDays || 0),
+  };
+};
+const preserveLabResults = (existingRequests = [], requestedRequests = []) => {
+  const identity = (request) => request.testCode || request.testName;
+  const requestedIds = new Set(requestedRequests.map(identity));
+  const preserved = existingRequests.filter((request) => request.status && request.status !== 'Pending'
+    && !requestedIds.has(identity(request)));
+  const mergedRequests = requestedRequests.map((request) => {
+    const previous = existingRequests.find((item) => identity(item) === identity(request));
+    return previous && previous.status !== 'Pending'
+      ? {
+        ...previous.toObject?.(),
+        ...request,
+        status: previous.status,
+        result: previous.result || '',
+        unit: previous.unit || '',
+        referenceRange: previous.referenceRange || '',
+        flag: previous.flag || '',
+      }
+      : request;
+  });
+  return [...preserved, ...mergedRequests];
+};
+const preserveLabWorkflow = (visit, examinationData) => {
+  const previous = visit.examination || {};
+  const previousRequests = previous.labRequests || [];
+  const labRequests = preserveLabResults(previousRequests, examinationData.labRequests);
+  const hasRequests = labRequests.length > 0;
+  const previousCodes = new Set(previousRequests.map((item) => item.testCode || item.testName));
+  const addedTests = examinationData.labRequests.some((item) => !previousCodes.has(item.testCode || item.testName));
+  const startNewBatch = previousRequests.length > 0 && addedTests
+    && previous.labStatus && previous.labStatus !== 'Pending';
+  const requestNumber = startNewBatch
+    ? `LR-${getClinicDateKey(visit.visitDate).replace(/-/g, '')}-${String(visit._id).slice(-6).toUpperCase()}-${Date.now().toString(36).slice(-4).toUpperCase()}`
+    : previous.labRequestNumber
+      || `LR-${getClinicDateKey(visit.visitDate).replace(/-/g, '')}-${String(visit._id).slice(-6).toUpperCase()}`;
+  const workflow = startNewBatch ? {} : previous;
+  return {
+    ...examinationData,
+    labRequests,
+    labRequestNumber: hasRequests ? requestNumber : '',
+    labStatus: hasRequests ? (workflow.labStatus || 'Pending') : '',
+    labRequestedAt: hasRequests ? (workflow.labRequestedAt || new Date()) : null,
+    labSampleCollectedAt: workflow.labSampleCollectedAt || null,
+    labInProgressAt: workflow.labInProgressAt || null,
+    labResultReadyAt: workflow.labResultReadyAt || null,
+    labReviewedAt: workflow.labReviewedAt || null,
+    labTestedBy: workflow.labTestedBy || '',
+    labDateOfReport: workflow.labDateOfReport || null,
+    labApprovedBy: workflow.labApprovedBy || '',
+    labApprovedAt: workflow.labApprovedAt || null,
+  };
+};
+const preservePrescriptionWorkflow = (visit, examinationData, user) => {
+  const previous = visit.examination || {};
+  const existingPrescriptions = previous.prescriptions || [];
+  const submittedPrescriptions = previous.prescriptionStatus
+    && previous.prescriptionStatus !== 'Pending'
+    ? existingPrescriptions.map((item) => item.toObject?.() || item)
+    : examinationData.prescriptions;
+  const prescriptions = submittedPrescriptions.map((item) => {
+    const previousItem = existingPrescriptions.find((entry) => (
+      entry.medicine?.trim().toLowerCase() === item.medicine?.trim().toLowerCase()
+      && entry.strength?.trim().toLowerCase() === item.strength?.trim().toLowerCase()
+      && entry.form?.trim().toLowerCase() === item.form?.trim().toLowerCase()
+    ));
+    return { ...item, priceCents: previousItem?.priceCents || 0 };
+  });
+  const hasPrescriptions = prescriptions.length > 0;
+  return {
+    ...examinationData,
+    prescriptions,
+    prescriptionStatus: hasPrescriptions
+      ? previous.prescriptionStatus || 'Pending'
+      : previous.prescriptionStatus || '',
+    prescriber: hasPrescriptions ? {
+      name: trimString(user?.name, 120),
+      qualification: trimString(user?.qualification, 120),
+      registration: trimString(user?.registrationNo || user?.registration || user?.licenseNumber, 120),
+      signedAt: new Date(),
+    } : previous.prescriber || {},
+    prescriptionEvaluatedBy: previous.prescriptionEvaluatedBy || '',
+    prescriptionEvaluatedAt: previous.prescriptionEvaluatedAt || null,
+    prescriptionDispensedBy: previous.prescriptionDispensedBy || '',
+    prescriptionDispensedAt: previous.prescriptionDispensedAt || null,
+  };
+};
 const sortQueueByPriority = (entries) => entries.sort((left, right) => (
   Number(Boolean(right.isEmergency)) - Number(Boolean(left.isEmergency))
   || (priorityOrder[left.priority] ?? 2) - (priorityOrder[right.priority] ?? 2)
@@ -46,7 +190,7 @@ const getExaminationDepartment = async (req) => {
 const populateQueueVisits = (query) => query.populate({
   path: 'visitId',
   select: 'visitId patientRecordId patientId patientName visitDate visitType priority status diagnosis examination emergency referred',
-  populate: { path: 'patientRecordId', select: 'cardNumber age sex universityIdNumber' },
+  populate: { path: 'patientRecordId', select: 'cardNumber fullName age sex universityIdNumber governmentIdNumber phoneNumber region town woreda kebele address' },
 });
 
 const toQueueItem = (queue, now = Date.now()) => {
@@ -60,6 +204,15 @@ const toQueueItem = (queue, now = Date.now()) => {
     name: queue.patientName || visit?.patientName || 'Patient',
     studentId: visit?.patientRecordId?.universityIdNumber || queue.patientId || visit?.patientId || '',
     cardNumber: visit?.patientRecordId?.cardNumber || '',
+    patientRecordId: visit?.patientRecordId?._id ? String(visit.patientRecordId._id) : '',
+    telephone: visit?.patientRecordId?.phoneNumber || '',
+    governmentIdNumber: visit?.patientRecordId?.governmentIdNumber || '',
+    region: visit?.patientRecordId?.region || '',
+    town: visit?.patientRecordId?.town || '',
+    woreda: visit?.patientRecordId?.woreda || '',
+    kebele: visit?.patientRecordId?.kebele || '',
+    address: visit?.patientRecordId?.address || '',
+    woredaKebele: [visit?.patientRecordId?.woreda, visit?.patientRecordId?.kebele].filter(Boolean).join(' / '),
     age: visit?.patientRecordId?.age ?? null,
     sex: visit?.patientRecordId?.sex || '',
     visitType: visit?.visitType || queue.visitType || '',
@@ -87,7 +240,15 @@ export const getExaminationDashboard = async (req, res) => {
       Queue.countDocuments({ ...queueFilter, status: 'completed' }),
       Queue.countDocuments({ ...queueFilter, status: { $in: activeQueueStatuses }, $or: [{ priority: 'Emergency' }, { isEmergency: true }] }),
       populateQueueVisits(Queue.find({ ...queueFilter, status: { $in: activeQueueStatuses } }).limit(250)).lean(),
-      ClinicVisit.find(visitFilter).select('patientId patientName visitId visitDate diagnosis referred examination status visitType priority').sort({ visitDate: -1 }).limit(100).lean(),
+      ClinicVisit.find(visitFilter)
+        .select('patientRecordId patientId patientName visitId visitDate diagnosis referred examination status visitType priority')
+        .populate({
+          path: 'patientRecordId',
+          select: 'cardNumber fullName age sex universityIdNumber governmentIdNumber phoneNumber region town woreda kebele address',
+        })
+        .sort({ visitDate: -1 })
+        .limit(100)
+        .lean(),
       ClinicVisit.aggregate([
         { $match: { ...visitFilter, diagnosis: { $type: 'string', $regex: /\S/ } } },
         { $group: { _id: '$diagnosis', count: { $sum: 1 } } },
@@ -148,6 +309,52 @@ export const getExaminationDashboard = async (req, res) => {
   } catch (error) {
     console.error('Failed to load Examination Room dashboard:', error);
     return res.status(500).json({ success: false, message: 'Unable to load the Examination Room dashboard.' });
+  }
+};
+
+export const getExaminationLabRequests = async (req, res) => {
+  try {
+    const department = await getExaminationDepartment(req);
+    const roles = [
+      req.user?.activeRole,
+      req.user?.role,
+      ...(Array.isArray(req.user?.roles) ? req.user.roles : []),
+    ].map((role) => String(role || '').toLowerCase());
+    const isLabStaff = roles.some((role) => role.includes('lab'));
+    const { start, end } = getClinicDayBounds();
+    const visits = await ClinicVisit.find({
+      'examination.labRequests.0': { $exists: true },
+      ...(department && !isLabStaff ? { department } : {}),
+      $or: [
+        { 'examination.labStatus': { $in: ['Pending', 'Sample Collected', 'In Progress', 'Results Ready'] } },
+        { 'examination.labRequests.status': { $in: ['Pending', 'Sample Collected', 'In Progress', 'Results Ready'] } },
+        { visitDate: { $gte: start, $lt: end } },
+      ],
+    })
+      .select([
+        'patientRecordId',
+        'patientId',
+        'patientName',
+        'visitDate',
+        'examination.labRequests',
+        'examination.labRequestNumber',
+        'examination.labStatus',
+        'examination.labTestedBy',
+        'examination.labDateOfReport',
+        'examination.labApprovedBy',
+        'examination.labApprovedAt',
+      ].join(' '))
+      .populate({
+        path: 'patientRecordId',
+        select: 'cardNumber fullName age sex universityIdNumber governmentIdNumber phoneNumber region town woreda kebele address',
+      })
+      .sort({ visitDate: -1 })
+      .limit(200)
+      .lean();
+    return res.status(200).json({ success: true, data: visits });
+  } catch (error) {
+    console.error('Failed to load examination laboratory requests:', error);
+    return res.status(500).json({ success: false, message: 'Unable to load laboratory requests.' });
   }
 };
 
@@ -230,7 +437,7 @@ export const searchExaminationPatients = async (req, res) => {
         { universityIdNumber: expression },
         { governmentIdNumber: expression },
       ],
-    }).select('patientId cardNumber fullName age sex universityIdNumber').sort({ fullName: 1 }).limit(25).lean();
+    }).select('patientId cardNumber fullName age sex universityIdNumber governmentIdNumber phoneNumber region town woreda kebele address').sort({ fullName: 1 }).limit(25).lean();
     return res.status(200).json({ success: true, data: patients });
   } catch (error) {
     console.error('Failed to search Examination Room patients:', error);
@@ -241,7 +448,7 @@ export const searchExaminationPatients = async (req, res) => {
 export const getExaminationPatientHistory = async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Patient reference is invalid.' });
   try {
-    const patient = await Patient.findById(req.params.id).select('patientId cardNumber fullName age sex universityIdNumber').lean();
+    const patient = await Patient.findById(req.params.id).select('patientId cardNumber fullName age sex universityIdNumber governmentIdNumber phoneNumber region town woreda kebele address').lean();
     if (!patient) return res.status(404).json({ success: false, message: 'Patient record not found.' });
     const visits = await ClinicVisit.find({ $or: [{ patientRecordId: patient._id }, { patientId: patient.patientId }] })
       .select('visitId patientId patientName visitDate department visitType priority status diagnosis examination')
@@ -258,22 +465,15 @@ export const getExaminationPatientHistory = async (req, res) => {
 
 export const submitExamination = async (req, res) => {
   const { visitId } = req.params;
+  const examinationData = getExaminationData(req.body);
   const diagnosis = trimString(req.body?.diagnosis, 500);
-  const chiefComplaint = trimString(req.body?.chiefComplaint, 1000);
-  const historyOfPresentIllness = trimString(req.body?.historyOfPresentIllness, 3000);
-  const sickLeaveDays = Number(req.body?.sickLeaveDays || 0);
-  if (!mongoose.isValidObjectId(visitId) || !diagnosis || !chiefComplaint || !Number.isInteger(sickLeaveDays) || sickLeaveDays < 0 || sickLeaveDays > 365) {
-    return res.status(400).json({ success: false, message: 'Enter the chief complaint, diagnosis, and a valid sick-leave duration.' });
+  if (!mongoose.isValidObjectId(visitId) || !diagnosis || !examinationData.hmisDiagnosis
+    || !['Outpatient', 'Emergency', 'Non-emergency', 'Sick Leave'].includes(examinationData.patientCondition)
+    || !Number.isInteger(examinationData.sickLeaveDays) || examinationData.sickLeaveDays < 0 || examinationData.sickLeaveDays > 365) {
+    return res.status(400).json({ success: false, message: 'Enter the main diagnosis, HMIS diagnosis, patient condition, and a valid sick-leave duration.' });
   }
-  const cleanList = (value, fields, limit) => (Array.isArray(value) ? value.slice(0, 30).map((entry) => {
-    if (typeof entry === 'string') return { [fields[0]]: trimString(entry, limit) };
-    if (!entry || typeof entry !== 'object') return null;
-    return Object.fromEntries(fields.map((field) => [field, trimString(entry[field], limit)]));
-  }).filter((entry) => entry && Object.values(entry).some(Boolean)) : []);
-  const labRequests = cleanList(req.body?.labRequests, ['testName'], 120).map((request) => ({ ...request, status: 'Pending' }));
-  const prescriptions = cleanList(req.body?.prescriptions, ['medicine', 'dosage', 'instructions'], 300);
-  const referralDepartment = trimString(req.body?.referral?.department, 120);
-  const referralReason = trimString(req.body?.referral?.reason, 1000);
+  const referralDepartment = examinationData.referral.department;
+  const referralReason = examinationData.referral.reason;
   if (Boolean(referralDepartment) !== Boolean(referralReason)) {
     return res.status(400).json({ success: false, message: 'Provide both a referral department and reason.' });
   }
@@ -287,23 +487,11 @@ export const submitExamination = async (req, res) => {
     visit.diagnosis = diagnosis;
     visit.referred = Boolean(referralDepartment);
     visit.status = 'Completed';
-    visit.examination = {
-      chiefComplaint,
-      historyOfPresentIllness,
-      vitals: {
-        bloodPressure: trimString(req.body?.vitals?.bloodPressure, 30),
-        temperature: trimString(req.body?.vitals?.temperature, 30),
-        pulse: trimString(req.body?.vitals?.pulse, 30),
-      },
-      labRequests,
-      prescriptions,
-      referral: {
-        department: referralDepartment,
-        reason: referralReason,
-        referredAt: referralDepartment ? new Date() : null,
-      },
-      sickLeaveDays,
-    };
+    visit.examination = preservePrescriptionWorkflow(
+      visit,
+      preserveLabWorkflow(visit, examinationData),
+      req.user,
+    );
     const savedVisit = await visit.save();
     const completedQueue = await Queue.findOneAndUpdate(
       { _id: queue._id, status: 'in_progress' },
@@ -319,9 +507,277 @@ export const submitExamination = async (req, res) => {
       details: `Examination completed for visit ${savedVisit.visitId || savedVisit.patientId}.`,
     });
     req.app.get('io')?.emit('clinic:queue-updated');
+    if (savedVisit.examination.prescriptions?.length) {
+      req.app.get('io')?.emit('clinic:prescription-updated', { visitId: String(savedVisit._id) });
+    }
     return res.status(200).json({ success: true, message: 'Examination saved and queue completed.', data: savedVisit });
   } catch (error) {
     console.error('Failed to submit Examination Room record:', error);
     return res.status(500).json({ success: false, message: 'Unable to save the examination.' });
+  }
+};
+
+export const saveExaminationDraft = async (req, res) => {
+  const { visitId } = req.params;
+  if (!mongoose.isValidObjectId(visitId)) {
+    return res.status(400).json({ success: false, message: 'Clinic visit reference is invalid.' });
+  }
+  const examinationData = getExaminationData(req.body);
+  if (!Number.isInteger(examinationData.sickLeaveDays) || examinationData.sickLeaveDays < 0 || examinationData.sickLeaveDays > 365) {
+    return res.status(400).json({ success: false, message: 'Enter a valid sick-leave duration.' });
+  }
+  try {
+    const department = await getExaminationDepartment(req);
+    const queue = await Queue.findOne({
+      visitId,
+      clinicDate: getClinicDateKey(),
+      status: 'in_progress',
+      ...(department ? { department } : {}),
+    });
+    if (!queue) return res.status(409).json({ success: false, message: 'Call this patient into consultation before saving a draft.' });
+    const visit = await ClinicVisit.findById(visitId);
+    if (!visit) return res.status(404).json({ success: false, message: 'Clinic visit not found.' });
+    visit.diagnosis = trimString(req.body?.diagnosis, 500);
+    visit.referred = Boolean(examinationData.referral.department);
+    visit.examination = preservePrescriptionWorkflow(
+      visit,
+      preserveLabWorkflow(visit, examinationData),
+      req.user,
+    );
+    const savedVisit = await visit.save();
+    await writeAuditEvent({
+      req,
+      action: 'EXAMINATION_DRAFT_SAVED',
+      entityType: 'clinic_visit',
+      entityId: savedVisit._id,
+      details: `Examination draft saved for visit ${savedVisit.visitId || savedVisit.patientId}.`,
+    });
+    if (savedVisit.examination.prescriptions?.length) {
+      req.app.get('io')?.emit('clinic:prescription-updated', { visitId: String(savedVisit._id) });
+    }
+    return res.status(200).json({ success: true, message: 'Examination draft saved.', data: savedVisit });
+  } catch (error) {
+    console.error('Failed to save Examination Room draft:', error);
+    return res.status(500).json({ success: false, message: 'Unable to save the examination draft.' });
+  }
+};
+
+export const submitPrescription = async (req, res) => {
+  const { visitId } = req.params;
+  if (!mongoose.isValidObjectId(visitId)) {
+    return res.status(400).json({ success: false, message: 'Clinic visit reference is invalid.' });
+  }
+  const prescriptions = cleanList(req.body?.prescriptions, [
+    'medicine', 'strength', 'form', 'dose', 'frequency', 'duration', 'quantity', 'quantityUnit', 'instructions',
+  ], 300, 30);
+  if (!prescriptions.length || prescriptions.some((item) => !item.medicine)) {
+    return res.status(400).json({ success: false, message: 'Add at least one medicine with a drug name before submitting.' });
+  }
+  const weight = trimString(req.body?.weight, 30);
+  const diagnosis = trimString(req.body?.diagnosis, 500);
+  const patientType = req.body?.prescriptionPatientType === 'inpatient' ? 'inpatient' : 'outpatient';
+  try {
+    const department = await getExaminationDepartment(req);
+    const queue = await Queue.findOne({
+      visitId,
+      clinicDate: getClinicDateKey(),
+      status: 'in_progress',
+      ...(department ? { department } : {}),
+    });
+    if (!queue) {
+      return res.status(409).json({ success: false, message: 'Call this patient into consultation before submitting a prescription.' });
+    }
+    const visit = await ClinicVisit.findById(visitId);
+    if (!visit) return res.status(404).json({ success: false, message: 'Clinic visit not found.' });
+    if (visit.examination?.prescriptionStatus
+      && visit.examination.prescriptionStatus !== 'Pending') {
+      return res.status(409).json({ success: false, message: 'This prescription has already been processed by the pharmacy and cannot be changed.' });
+    }
+
+    const examination = visit.examination || (visit.examination = {});
+    examination.prescriptions = prescriptions.map((item) => ({
+      ...item,
+      priceCents: 0,
+    }));
+    examination.prescriptionStatus = 'Pending';
+    examination.prescriptionPatientType = patientType;
+    examination.vitals = examination.vitals || {};
+    examination.vitals.weight = weight || examination.vitals.weight || '';
+    examination.prescriber = {
+      name: trimString(req.user?.name, 120),
+      qualification: trimString(req.user?.qualification, 120),
+      registration: trimString(req.user?.registrationNo || req.user?.registration || req.user?.licenseNumber, 120),
+      signedAt: new Date(),
+    };
+    if (diagnosis) visit.diagnosis = diagnosis;
+    const savedVisit = await visit.save();
+    await writeAuditEvent({
+      req,
+      action: 'PRESCRIPTION_SUBMITTED',
+      entityType: 'clinic_visit',
+      entityId: savedVisit._id,
+      details: `Prescription submitted to the pharmacy for visit ${savedVisit.visitId || savedVisit.patientId}.`,
+    });
+    req.app.get('io')?.emit('clinic:prescription-updated', { visitId: String(savedVisit._id) });
+    return res.status(200).json({ success: true, message: 'Prescription submitted to the pharmacy queue.', data: savedVisit });
+  } catch (error) {
+    console.error('Failed to submit prescription:', error);
+    return res.status(500).json({ success: false, message: 'Unable to submit the prescription.' });
+  }
+};
+
+export const updateLabProcessingStatus = async (req, res) => {
+  const { visitId } = req.params;
+  const action = trimString(req.body?.action, 40);
+  if (!mongoose.isValidObjectId(visitId) || !['collect-sample', 'start-processing'].includes(action)) {
+    return res.status(400).json({ success: false, message: 'A valid visit and lab processing action are required.' });
+  }
+  try {
+    const visit = await ClinicVisit.findById(visitId);
+    if (!visit) return res.status(404).json({ success: false, message: 'Clinic visit not found.' });
+    const examination = visit.examination;
+    if (!examination?.labRequests?.length) {
+      return res.status(409).json({ success: false, message: 'This visit has no laboratory requests to process.' });
+    }
+
+    const now = new Date();
+    if (action === 'collect-sample') {
+      if (examination.labStatus && examination.labStatus !== 'Pending') {
+        return res.status(409).json({ success: false, message: 'The sample has already moved past the requested stage.' });
+      }
+      examination.labStatus = 'Sample Collected';
+      examination.labSampleCollectedAt = now;
+      examination.labRequests.forEach((request) => {
+        if (request.status === 'Pending') request.status = 'Sample Collected';
+      });
+    } else {
+      if (examination.labStatus !== 'Sample Collected') {
+        return res.status(409).json({ success: false, message: 'Collect the sample before starting laboratory processing.' });
+      }
+      examination.labStatus = 'In Progress';
+      examination.labInProgressAt = now;
+      examination.labRequests.forEach((request) => {
+        if (request.status === 'Sample Collected') request.status = 'In Progress';
+      });
+    }
+
+    const savedVisit = await visit.save();
+    await writeAuditEvent({
+      req,
+      action: action === 'collect-sample' ? 'LAB_SAMPLE_COLLECTED' : 'LAB_PROCESSING_STARTED',
+      entityType: 'clinic_visit',
+      entityId: savedVisit._id,
+      details: `${action === 'collect-sample' ? 'Sample collected for' : 'Laboratory processing started for'} request ${examination.labRequestNumber}.`,
+    });
+    req.app.get('io')?.emit('clinic:lab-request-updated', { visitId: String(savedVisit._id) });
+    return res.status(200).json({ success: true, message: 'Laboratory status updated.', data: savedVisit });
+  } catch (error) {
+    console.error('Failed to update laboratory processing status:', error);
+    return res.status(500).json({ success: false, message: 'Unable to update laboratory processing status.' });
+  }
+};
+
+export const saveLabResults = async (req, res) => {
+  const { visitId } = req.params;
+  const results = req.body?.results;
+  if (!mongoose.isValidObjectId(visitId) || !Array.isArray(results) || results.length > 60) {
+    return res.status(400).json({ success: false, message: 'Provide a valid visit and laboratory results.' });
+  }
+  const cleanResults = results.map((item) => ({
+    testCode: trimString(item?.testCode, 100),
+    result: trimString(item?.result, 500),
+    unit: trimString(item?.unit, 40),
+    referenceRange: trimString(item?.referenceRange, 100),
+    flag: trimString(item?.flag, 20),
+  }));
+  if (cleanResults.some((item) => !item.testCode || !item.result)
+    || new Set(cleanResults.map((item) => item.testCode)).size !== cleanResults.length) {
+    return res.status(400).json({ success: false, message: 'Enter a result for each submitted test without duplicate test codes.' });
+  }
+  const reportDate = req.body?.dateOfReport ? new Date(req.body.dateOfReport) : new Date();
+  if (Number.isNaN(reportDate.getTime())) {
+    return res.status(400).json({ success: false, message: 'Enter a valid laboratory report date.' });
+  }
+  try {
+    const visit = await ClinicVisit.findById(visitId);
+    if (!visit) return res.status(404).json({ success: false, message: 'Clinic visit not found.' });
+    const examination = visit.examination;
+    if (!examination?.labRequests?.length || !['In Progress', 'Results Ready'].includes(examination.labStatus)) {
+      return res.status(409).json({ success: false, message: 'Start processing this laboratory request before entering results.' });
+    }
+    const requestedCodes = new Set(examination.labRequests.map((item) => item.testCode || item.testName));
+    if (cleanResults.some((item) => !requestedCodes.has(item.testCode))) {
+      return res.status(400).json({ success: false, message: 'A result references a test that was not requested.' });
+    }
+
+    const resultsByCode = new Map(cleanResults.map((item) => [item.testCode, item]));
+    examination.labRequests.forEach((request) => {
+      const result = resultsByCode.get(request.testCode || request.testName);
+      if (!result) return;
+      request.result = result.result;
+      request.unit = result.unit;
+      request.referenceRange = result.referenceRange;
+      request.flag = result.flag;
+      request.status = 'Results Ready';
+    });
+    const allResultsEntered = examination.labRequests.every((request) => Boolean(request.result?.trim()));
+    examination.labStatus = allResultsEntered ? 'Results Ready' : 'In Progress';
+    examination.labResultReadyAt = allResultsEntered ? new Date() : null;
+    examination.labTestedBy = trimString(req.user?.name, 120);
+    examination.labDateOfReport = reportDate;
+
+    const savedVisit = await visit.save();
+    await writeAuditEvent({
+      req,
+      action: 'LAB_RESULTS_SAVED',
+      entityType: 'clinic_visit',
+      entityId: savedVisit._id,
+      details: `Laboratory results saved for request ${examination.labRequestNumber}.`,
+    });
+    req.app.get('io')?.emit('clinic:lab-request-updated', { visitId: String(savedVisit._id) });
+    return res.status(200).json({
+      success: true,
+      message: allResultsEntered ? 'Results saved and ready for approval.' : 'Partial results saved.',
+      data: savedVisit,
+    });
+  } catch (error) {
+    console.error('Failed to save laboratory results:', error);
+    return res.status(500).json({ success: false, message: 'Unable to save laboratory results.' });
+  }
+};
+
+export const approveLabResults = async (req, res) => {
+  const { visitId } = req.params;
+  if (!mongoose.isValidObjectId(visitId)) {
+    return res.status(400).json({ success: false, message: 'Clinic visit reference is invalid.' });
+  }
+  try {
+    const visit = await ClinicVisit.findById(visitId);
+    if (!visit) return res.status(404).json({ success: false, message: 'Clinic visit not found.' });
+    const examination = visit.examination;
+    if (examination?.labStatus !== 'Results Ready'
+      || !examination.labRequests?.length
+      || examination.labRequests.some((request) => !request.result?.trim())) {
+      return res.status(409).json({ success: false, message: 'All requested test results must be saved before approval.' });
+    }
+    examination.labStatus = 'Reviewed';
+    examination.labReviewedAt = new Date();
+    examination.labApprovedAt = examination.labReviewedAt;
+    examination.labApprovedBy = trimString(req.user?.name, 120);
+    examination.labRequests.forEach((request) => { request.status = 'Reviewed'; });
+
+    const savedVisit = await visit.save();
+    await writeAuditEvent({
+      req,
+      action: 'LAB_RESULTS_APPROVED',
+      entityType: 'clinic_visit',
+      entityId: savedVisit._id,
+      details: `Laboratory results approved for request ${examination.labRequestNumber}.`,
+    });
+    req.app.get('io')?.emit('clinic:lab-request-updated', { visitId: String(savedVisit._id) });
+    return res.status(200).json({ success: true, message: 'Laboratory results approved.', data: savedVisit });
+  } catch (error) {
+    console.error('Failed to approve laboratory results:', error);
+    return res.status(500).json({ success: false, message: 'Unable to approve laboratory results.' });
   }
 };

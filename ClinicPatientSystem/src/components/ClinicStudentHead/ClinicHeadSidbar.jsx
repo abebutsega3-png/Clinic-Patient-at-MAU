@@ -7,7 +7,8 @@ import {
   FileText,
   Pill,
   BarChart3,
-  Settings
+  Settings,
+  ClipboardList,
 } from 'lucide-react';
 
 const ClinicHeadSidebar = ({ isOpen = true, onNavigate }) => {
@@ -17,6 +18,7 @@ const ClinicHeadSidebar = ({ isOpen = true, onNavigate }) => {
     { label: 'Staff Management', path: '/clinic-head/staff', icon: Users },
     { label: 'Patient Flow and Records', path: '/clinic-head/patients', icon: FileText },
     { label: 'Pharmacy & Inventory Control', path: '/clinic-head/inventory', icon: Pill },
+    { label: 'Store Requisitions', path: '/clinic-head/store-requisitions', icon: ClipboardList },
     { label: 'Reports & Analytics', path: '/clinic-head/reports', icon: BarChart3 },
     { label: 'Settings', path: '/clinic-head/settings', icon: Settings },
   ];

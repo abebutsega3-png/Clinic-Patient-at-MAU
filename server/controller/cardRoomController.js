@@ -35,6 +35,7 @@ const editablePatientFields = [
   'campus',
   'academicDepartment',
   'region',
+  'town',
   'woreda',
   'kebele',
   'dormBlock',
@@ -98,12 +99,14 @@ const patientSummary = (patient) => ({
   patientType: patient.patientType || 'Existing Patient',
   governmentIdNumber: patient.governmentIdNumber || '',
   universityIdNumber: patient.universityIdNumber || '',
+  allergies: patient.allergies || [],
   phoneNumber: patient.phoneNumber || '',
   patientCategory: patient.patientCategory,
   campus: patient.campus || '',
   academicDepartment: patient.academicDepartment || '',
   departmentFaculty: patient.academicDepartment || '',
   region: patient.region || '',
+  town: patient.town || '',
   woreda: patient.woreda || '',
   kebele: patient.kebele || '',
   dormBlock: patient.dormBlock || '',
@@ -370,13 +373,14 @@ export const createCardRoomPatient = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Date of birth must produce an age between 0 and 125.' });
     }
     const region = trimString(input.region, 100);
+    const town = trimString(input.town, 100);
     const woreda = trimString(input.woreda, 100);
     const kebele = trimString(input.kebele, 100);
     const dormBlock = trimString(input.dormBlock, 80);
     const houseNumber = trimString(input.houseNumber, 40);
     const campus = trimString(input.campus, 120);
     const academicDepartment = trimString(input.academicDepartment || input.departmentFaculty, 120);
-    const address = [region, woreda, kebele, houseNumber].filter(Boolean).join(', ');
+    const address = [region, town, woreda, kebele, houseNumber].filter(Boolean).join(', ');
     const patient = await Patient.create({
       ...identifiers,
       fullName,
@@ -389,11 +393,15 @@ export const createCardRoomPatient = async (req, res) => {
       patientType: 'New Patient',
       governmentIdNumber: governmentIdNumber || undefined,
       universityIdNumber: universityIdNumber || undefined,
+      allergies: Array.isArray(input.allergies)
+        ? input.allergies.map((allergy) => trimString(allergy, 120)).filter(Boolean).slice(0, 30)
+        : trimString(input.allergies, 1000).split(',').map((allergy) => allergy.trim().slice(0, 120)).filter(Boolean).slice(0, 30),
       phoneNumber,
       patientCategory,
       campus,
       academicDepartment,
       region,
+      town,
       woreda,
       kebele,
       dormBlock,

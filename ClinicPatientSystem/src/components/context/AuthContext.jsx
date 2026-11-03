@@ -31,6 +31,13 @@ export function AuthProvider({ children }) {
     localStorage.setItem(TOKEN_KEY, accessToken);
   };
 
+  const expireSession = useCallback(() => {
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+  }, []);
+
   const logout = () => {
     if (token) {
       void fetch('/api/auth/logout', {
@@ -42,10 +49,7 @@ export function AuthProvider({ children }) {
         console.error('Unable to record sign-out:', error);
       });
     }
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(TOKEN_KEY);
+    expireSession();
   };
 
   const updateUser = useCallback((userData) => {
@@ -53,7 +57,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, token, loading, login, logout, expireSession, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

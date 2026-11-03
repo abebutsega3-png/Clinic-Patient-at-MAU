@@ -26,6 +26,9 @@ const userSchema = new mongoose.Schema({
     position: { type: String, trim: true, default: '' },
     specialization: { type: String, trim: true, default: '' },
     licenseNumber: { type: String, trim: true, default: '' },
+    qualification: { type: String, trim: true, default: '' },
+    registration: { type: String, trim: true, default: '' },
+    registrationNo: { type: String, trim: true, default: '' },
     campus: { type: String, trim: true, default: 'Main Clinic' },
     dateJoined: { type: Date },
     password: {

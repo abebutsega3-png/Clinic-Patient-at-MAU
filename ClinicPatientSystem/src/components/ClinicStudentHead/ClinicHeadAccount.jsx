@@ -10,6 +10,8 @@ export function ClinicHeadProfile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || '');
+  const [qualification, setQualification] = useState(user?.qualification || '');
+  const [registrationNo, setRegistrationNo] = useState(user?.registrationNo || user?.registration || '');
   const [profileImage, setProfileImage] = useState(user?.profileImage || '');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -24,6 +26,8 @@ export function ClinicHeadProfile() {
         if (!mounted) return;
         setProfile(data.data);
         setPhoneNumber(data.data.phoneNumber || '');
+        setQualification(data.data.qualification || '');
+        setRegistrationNo(data.data.registrationNo || data.data.registration || data.data.licenseNumber || '');
         setProfileImage(data.data.profileImage || '');
         updateUser(data.data);
       })
@@ -64,9 +68,16 @@ export function ClinicHeadProfile() {
     setSaveError('');
     setNotice('');
     try {
-      const { data } = await axios.patch('/api/auth/me/profile', { phoneNumber, profileImage }, authConfig);
+      const { data } = await axios.patch('/api/auth/me/profile', {
+        phoneNumber,
+        profileImage,
+        qualification,
+        registrationNo,
+      }, authConfig);
       setProfile(data.data);
       setPhoneNumber(data.data.phoneNumber || '');
+      setQualification(data.data.qualification || '');
+      setRegistrationNo(data.data.registrationNo || data.data.registration || data.data.licenseNumber || '');
       setProfileImage(data.data.profileImage || '');
       updateUser(data.data);
       setNotice(data.message || 'Profile changes saved.');
@@ -131,6 +142,14 @@ export function ClinicHeadProfile() {
                 placeholder="Enter phone number"
                 className={editableField}
               />
+            </label>
+            <label className="block space-y-1.5 text-xs font-semibold text-slate-600">
+                Qualification
+                <input value={qualification} maxLength="120" onChange={(event) => setQualification(event.target.value)} placeholder="e.g. General Practitioner" className={editableField} />
+            </label>
+            <label className="block space-y-1.5 text-xs font-semibold text-slate-600">
+                Registration Number
+                <input value={registrationNo} maxLength="120" onChange={(event) => setRegistrationNo(event.target.value)} placeholder="Professional registration number" className={editableField} />
             </label>
             <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
               {saving ? <LoaderCircle size={16} className="animate-spin" /> : <Save size={16} />}

@@ -7,9 +7,20 @@ export const requireClinicPermissions = (...requiredPermissions) => async (req, 
   }
 
   try {
+    const normalizedRoleName = activeRole.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const escapedRoleName = normalizedRoleName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const normalizedRoleCode = activeRole.toUpperCase().replace(/[\s-]+/g, '_');
     const role = await RolePermission.findOne({
-      roleName: { $regex: `^${activeRole.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
-      $or: [{ status: 'Active' }, { status: { $exists: false } }],
+      $and: [
+        {
+          $or: [
+            { roleName: { $regex: `^${escapedRoleName}$`, $options: 'i' } },
+            { displayName: { $regex: `^${escapedRoleName}$`, $options: 'i' } },
+            { roleCode: normalizedRoleCode },
+          ],
+        },
+        { $or: [{ status: 'Active' }, { status: { $exists: false } }] },
+      ],
     })
       .select('permissions')
       .lean();

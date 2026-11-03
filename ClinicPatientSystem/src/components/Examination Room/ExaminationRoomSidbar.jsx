@@ -18,7 +18,7 @@ export default function Sidebar({ activeItem, setActiveItem, isOpen = false, que
     { name: 'Patient Queue', icon: Users, badge: queueCount },
     { name: 'Current Consultation', icon: UserCheck },
     { name: 'Lab Requests', icon: FlaskConical, badge: labRequestsCount },
-    { name: 'Prescriptions', icon: Pill },
+    { name: 'Prescriptions', label: 'Prescriptions & Dispensing', icon: Pill },
     { name: 'Patient Records / History', icon: FileText },
     { name: 'Referrals', icon: Share2 },
     { name: 'Reports', icon: BarChart3 },
@@ -83,7 +83,7 @@ export default function Sidebar({ activeItem, setActiveItem, isOpen = false, que
                       isActive ? 'text-white' : 'text-slate-400'
                     }`}
                   />
-                  <span className="truncate">{item.name}</span>
+                  <span className="truncate">{item.label || item.name}</span>
                 </div>
                 {item.badge ? (
                   <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">

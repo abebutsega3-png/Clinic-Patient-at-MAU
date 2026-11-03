@@ -8,7 +8,7 @@ import { AuditLog } from '../module/AdminDashboardModels.js';
 import { writeAuditEvent } from '../utils/auditLogger.js';
 import { getSecurityPolicy, validatePasswordAgainstPolicy } from '../utils/securityPolicy.js';
 
-const userFields = 'name username email employeeId phoneNumber alternativePhone gender dateOfBirth role activeRole department departmentId status dateJoined lastLogin createdAt failedLoginAttempts loginLockedUntil mustChangePassword position';
+const userFields = 'name username email employeeId phoneNumber alternativePhone gender dateOfBirth role activeRole department departmentId status dateJoined lastLogin createdAt failedLoginAttempts loginLockedUntil mustChangePassword position qualification registration registrationNo licenseNumber';
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const isValidId = (value) => /^[a-f\d]{24}$/i.test(value || '');
 const isSmtpConfigured = () => Boolean(
@@ -213,7 +213,7 @@ export const getManagedUserDetails = async (req, res) => {
 export const createManagedUser = async (req, res) => {
   const {
     name, username, password, email = '', employeeId = '', phoneNumber = '', gender = '', dateOfBirth = '',
-    role, departmentId, status = 'Active', sendWelcomeEmail: shouldSendWelcomeEmail = false,
+    role, departmentId, status = 'Active', qualification = '', registrationNo = '', sendWelcomeEmail: shouldSendWelcomeEmail = false,
     mustChangePassword = true,
   } = req.body || {};
   const cleanName = typeof name === 'string' ? name.trim() : '';
@@ -225,6 +225,8 @@ export const createManagedUser = async (req, res) => {
   const cleanRole = typeof role === 'string' ? role.trim() : '';
   const cleanGender = typeof gender === 'string' ? gender.trim() : '';
   const cleanDateOfBirth = typeof dateOfBirth === 'string' ? dateOfBirth.trim() : '';
+  const cleanQualification = typeof qualification === 'string' ? qualification.trim() : '';
+  const cleanRegistrationNo = typeof registrationNo === 'string' ? registrationNo.trim() : '';
   const validDateOfBirth = !cleanDateOfBirth
     || (/^\d{4}-\d{2}-\d{2}$/.test(cleanDateOfBirth)
       && !Number.isNaN(Date.parse(`${cleanDateOfBirth}T00:00:00.000Z`))
@@ -255,6 +257,7 @@ export const createManagedUser = async (req, res) => {
     || cleanPassword.length > 128
     || (!cleanEmail && !cleanPhone) || cleanEmail.length > 254
     || cleanEmployeeId.length > 50
+    || cleanQualification.length > 120 || cleanRegistrationNo.length > 120
     || !['Male', 'Female', 'Other'].includes(cleanGender) || !cleanDateOfBirth || !validDateOfBirth || !meetsMinimumAge
     || typeof shouldSendWelcomeEmail !== 'boolean'
     || typeof mustChangePassword !== 'boolean'
@@ -296,6 +299,9 @@ export const createManagedUser = async (req, res) => {
       email: cleanEmail || undefined,
       employeeId: cleanEmployeeId,
       phoneNumber: cleanPhone,
+      qualification: cleanQualification,
+      registration: cleanRegistrationNo,
+      registrationNo: cleanRegistrationNo,
       gender: cleanGender,
       dateOfBirth: cleanDateOfBirth,
       dateJoined: new Date(),
@@ -355,7 +361,7 @@ export const createManagedUser = async (req, res) => {
 };
 
 export const updateManagedUser = async (req, res) => {
-  const { name, username, email = '', employeeId = '', phoneNumber = '', gender = '', dateOfBirth = '', role, departmentId, status } = req.body || {};
+  const { name, username, email = '', employeeId = '', phoneNumber = '', gender = '', dateOfBirth = '', role, departmentId, status, qualification = '', registrationNo = '' } = req.body || {};
   const cleanName = typeof name === 'string' ? name.trim() : '';
   const cleanUsername = typeof username === 'string' ? username.trim() : '';
   const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -363,6 +369,8 @@ export const updateManagedUser = async (req, res) => {
   const cleanPhone = typeof phoneNumber === 'string' ? phoneNumber.trim() : '';
   const cleanGender = typeof gender === 'string' ? gender.trim() : '';
   const cleanDateOfBirth = typeof dateOfBirth === 'string' ? dateOfBirth.trim() : '';
+  const cleanQualification = typeof qualification === 'string' ? qualification.trim() : '';
+  const cleanRegistrationNo = typeof registrationNo === 'string' ? registrationNo.trim() : '';
   const validDateOfBirth = !cleanDateOfBirth
     || (/^\d{4}-\d{2}-\d{2}$/.test(cleanDateOfBirth)
       && !Number.isNaN(Date.parse(`${cleanDateOfBirth}T00:00:00.000Z`))
@@ -374,6 +382,7 @@ export const updateManagedUser = async (req, res) => {
     || (!cleanEmail && !cleanPhone) || cleanEmail.length > 254
     || (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail))
     || cleanEmployeeId.length > 50 || cleanPhone.length > 30
+    || cleanQualification.length > 120 || cleanRegistrationNo.length > 120
     || !['', 'Male', 'Female', 'Other'].includes(cleanGender) || !validDateOfBirth
     || typeof departmentId !== 'string' || !isValidId(departmentId)
     || !['Active', 'Inactive', 'On Leave'].includes(status)) {
@@ -408,6 +417,8 @@ export const updateManagedUser = async (req, res) => {
       email: target.email || '',
       employeeId: target.employeeId || '',
       phoneNumber: target.phoneNumber || '',
+      qualification: target.qualification || '',
+      registrationNo: target.registrationNo || target.registration || target.licenseNumber || '',
       gender: target.gender || '',
       dateOfBirth: target.dateOfBirth || '',
       role: target.role,
@@ -420,6 +431,9 @@ export const updateManagedUser = async (req, res) => {
     target.email = cleanEmail || undefined;
     target.employeeId = cleanEmployeeId;
     target.phoneNumber = cleanPhone;
+    target.qualification = cleanQualification;
+    target.registration = cleanRegistrationNo;
+    target.registrationNo = cleanRegistrationNo;
     target.gender = cleanGender;
     target.dateOfBirth = cleanDateOfBirth;
     target.role = cleanRole;

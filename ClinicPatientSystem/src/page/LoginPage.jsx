@@ -68,6 +68,10 @@ export default function LoginPage() {
         navigate('/clinic-head', { replace: true });
       } else if (hasRole('admin')) {
         navigate('/admin', { replace: true });
+      } else if (hasRole('store keeper', 'storekeeper', 'main store keeper', 'main storekeeper')) {
+        navigate('/clinic-head/store-requisitions', { replace: true });
+      } else if (userRoles.includes('drug store')) {
+        navigate('/clinic-head/store-requisitions', { replace: true });
       } else if (hasRole('pharmacist', 'drug store manager', 'dispensary room')) {
         navigate('/dispensary', { replace: true });
       } else if (hasRole('examination', 'exam room', 'doctor')) {
