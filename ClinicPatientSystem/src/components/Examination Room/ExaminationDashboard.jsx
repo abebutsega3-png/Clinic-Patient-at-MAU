@@ -23,6 +23,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import StaffAnnouncements from '../ClinicStudentHead/StaffAnnouncements.jsx';
 import CurrentConsultation from './CurrentConsultation.jsx';
 import LabRequestForm from './LabRequestForm.jsx';
 import PrescriptionPaper from './PrescriptionPaper.jsx';
@@ -110,7 +111,7 @@ function PanelTitle({ icon: Icon, children, action }) {
   );
 }
 
-function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSummaryChange }) {
+function ExaminationDashboardContent({ activeItem = 'Dashboard', onNavigate, onQueueSummaryChange }) {
   const { token, user, expireSession } = useAuth();
   const [dashboard, setDashboard] = useState(null);
   const [labVisits, setLabVisits] = useState([]);
@@ -963,5 +964,11 @@ function ExaminationDashboard({ activeItem = 'Dashboard', onNavigate, onQueueSum
     </div>
   );
 }
+
+const ExaminationDashboard = (props) => (
+  props.activeItem === 'Announcements'
+    ? <StaffAnnouncements />
+    : <ExaminationDashboardContent {...props} />
+);
 
 export default ExaminationDashboard;

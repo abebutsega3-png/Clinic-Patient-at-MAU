@@ -43,6 +43,7 @@ const clinicVisitSchema = new mongoose.Schema({
     prescriptionEvaluatedAt: { type: Date, default: null },
     prescriptionAllergyReviewedBy: { type: String, trim: true, default: '' },
     prescriptionAllergyReviewedAt: { type: Date, default: null },
+    prescriptionAllergyVerification: { type: String, enum: ['nka', 'known-allergies', ''], default: '' },
     prescriptionDispensedBy: { type: String, trim: true, default: '' },
     prescriptionDispensedAt: { type: Date, default: null },
     opd: {

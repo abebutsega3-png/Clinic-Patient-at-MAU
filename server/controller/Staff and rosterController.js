@@ -320,18 +320,26 @@ export const getWeeklyRoster = async (req, res) => {
 export const getTodayAttendance = async (req, res) => {
   try {
     const { department, role, search, status } = req.query;
-    const date = getClinicDate();
+    const requestedDate = typeof req.query.date === 'string' ? req.query.date : '';
+    const date = requestedDate || getClinicDate();
+    const parsedDate = new Date(`${date}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)
+      || Number.isNaN(parsedDate.getTime())
+      || parsedDate.toISOString().slice(0, 10) !== date) {
+      return res.status(400).json({ success: false, message: 'Choose a valid attendance date.' });
+    }
     const staffMembers = (await findStaffMembers({ department, role, search }))
       .filter((staff) => staff.status !== 'Inactive');
     const staffIds = staffMembers.map((staff) => staff._id);
-    const [attendanceEntries, leaveEntries, rosterEntries, roles, departments] = await Promise.all([
+    const [attendanceEntries, leaveEntries, rosterEntries, roles, departments, operationalSettings] = await Promise.all([
       StaffAttendance.find({ staffId: { $in: staffIds }, date }).lean(),
       Roster.find({ staffId: { $in: staffIds }, date, shift: 'leave' }).lean(),
       Roster.find({ staffId: { $in: staffIds }, date }).lean(),
       getActiveStaffRoles(),
       Department.find({
         $or: [{ status: 'Active' }, { status: { $exists: false } }]
-      }).select('name').sort({ name: 1 }).lean()
+      }).select('name').sort({ name: 1 }).lean(),
+      ClinicOperationalSettings.findOne({ key: 'clinic' }).select('workingHours.days').lean()
     ]);
     const attendanceByStaff = new Map(attendanceEntries.map((entry) => [String(entry.staffId), entry]));
     const leaveStaffIds = new Set(leaveEntries.map((entry) => String(entry.staffId)));
@@ -343,6 +351,12 @@ export const getTodayAttendance = async (req, res) => {
       ? await findCurrentStaffMembers()
       : staffMembers;
     const staffById = new Map(replacementDirectory.map((staff) => [String(staff._id), staff]));
+    const weekday = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Addis_Ababa',
+      weekday: 'long'
+    }).format(new Date(`${date}T12:00:00+03:00`));
+    const clinicDay = operationalSettings?.workingHours?.days?.find((day) => day.day === weekday);
+    const clinicOpen = clinicDay ? !clinicDay.closed : weekday !== 'Sunday';
     const records = staffMembers.map((staff) => {
       const attendance = attendanceByStaff.get(String(staff._id));
       const roster = rosterByStaff.get(String(staff._id));
@@ -350,14 +364,22 @@ export const getTodayAttendance = async (req, res) => {
         ? staffById.get(String(attendance.replacementStaffId))
         : null;
       const onLeave = leaveStaffIds.has(String(staff._id)) || staff.status === 'On Leave' || roster?.shift === 'leave';
+      const rosterShift = roster?.shift
+        || (clinicOpen ? 'clinic-hours' : 'off');
+      const isScheduled = !onLeave && (
+        ['morning', 'afternoon', 'night'].includes(rosterShift)
+        || (!roster && clinicOpen)
+      );
       return {
         ...staff,
         attendanceStatus: onLeave ? 'on_leave' : attendance?.status || 'unrecorded',
         timeIn: attendance?.timeIn || '',
         timeOut: attendance?.timeOut || '',
         attendanceNote: attendance?.note || '',
-        rosterShift: onLeave ? 'leave' : roster?.shift || 'off',
-        isScheduled: !onLeave && ['morning', 'afternoon', 'night'].includes(roster?.shift),
+        rosterShift: onLeave ? 'leave' : rosterShift,
+        isScheduled,
+        checkInTime: attendance?.checkInTime || null,
+        checkOutTime: attendance?.checkOutTime || null,
         attendanceRecordedAt: attendance?.updatedAt || attendance?.createdAt || null,
         replacementStaffId: attendance?.replacementStaffId ? String(attendance.replacementStaffId) : '',
         replacementName: replacement?.name || ''
@@ -422,15 +444,22 @@ export const saveTodayAttendance = async (req, res) => {
         shift: { $in: ['morning', 'afternoon', 'night'] }
       }).select('staffId shift').lean(),
       ClinicOperationalSettings.findOne({ key: 'clinic' })
-        .select('rosterRules.shiftTimes rosterRules.gracePeriodMinutes rosterRules.lateAlertTriggerMinutes')
+        .select('rosterRules.shiftTimes rosterRules.gracePeriodMinutes rosterRules.lateAlertTriggerMinutes workingHours.days')
         .lean()
     ]);
     const leaveStaffIds = new Set(leaveEntries.map((entry) => String(entry.staffId)));
     const scheduledStaffIds = new Set(scheduledEntries.map((entry) => String(entry.staffId)));
     const shiftByStaffId = new Map(scheduledEntries.map((entry) => [String(entry.staffId), entry.shift]));
+    const weekday = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Addis_Ababa',
+      weekday: 'long'
+    }).format(new Date(`${date}T12:00:00+03:00`));
+    const clinicDay = operationalSettings?.workingHours?.days?.find((day) => day.day === weekday);
+    const clinicOpen = clinicDay ? !clinicDay.closed : weekday !== 'Sunday';
     if (attendanceUpdates.some((item) => (
       !leaveStaffIds.has(item.staffId)
       && !scheduledStaffIds.has(item.staffId)
+      && !clinicOpen
     ))) {
       return res.status(409).json({
         success: false,
@@ -440,6 +469,7 @@ export const saveTodayAttendance = async (req, res) => {
     const eligibleUpdates = attendanceUpdates.filter((item) => (
       !leaveStaffIds.has(item.staffId)
       && staffById.get(item.staffId)?.status !== 'On Leave'
+      && (scheduledStaffIds.has(item.staffId) || clinicOpen)
     ));
     const updates = eligibleUpdates.filter((item) => item.status !== 'unrecorded');
     const clearIds = eligibleUpdates
@@ -452,7 +482,7 @@ export const saveTodayAttendance = async (req, res) => {
     const operations = updates.map((item) => {
       let status = item.status;
       if (status === 'present' && item.timeIn) {
-        const shiftStart = shiftTimes[shiftByStaffId.get(item.staffId)]?.start;
+        const shiftStart = shiftTimes[shiftByStaffId.get(item.staffId)]?.start || clinicDay?.open || '08:00';
         if (shiftStart) {
           const [startHour, startMinute] = shiftStart.split(':').map(Number);
           const [inHour, inMinute] = item.timeIn.split(':').map(Number);
@@ -465,7 +495,7 @@ export const saveTodayAttendance = async (req, res) => {
 
       let lateAlertTriggered = false;
       if (status === 'late' && item.timeIn) {
-        const shiftStart = shiftTimes[shiftByStaffId.get(item.staffId)]?.start;
+        const shiftStart = shiftTimes[shiftByStaffId.get(item.staffId)]?.start || clinicDay?.open || '08:00';
         if (shiftStart) {
           const [startHour, startMinute] = shiftStart.split(':').map(Number);
           const [inHour, inMinute] = item.timeIn.split(':').map(Number);
@@ -516,6 +546,12 @@ export const saveTodayAttendance = async (req, res) => {
       notificationWarning = 'Attendance was saved, but one or more Clinic Head alerts could not be created.';
     }
     const affectedCount = operations.length + deleteResult.deletedCount;
+    if (attendanceKeys.length) {
+      req.app.get('io')?.emit('staff-attendance-updated', {
+        staffIds: attendanceKeys,
+        date
+      });
+    }
     return res.status(200).json({
       success: true,
       message: `Attendance saved for ${affectedCount} staff member${affectedCount === 1 ? '' : 's'}.`,
@@ -601,6 +637,12 @@ export const assignAttendanceReplacement = async (req, res) => {
     if (savedAttendance.modifiedCount !== 1) {
       return res.status(409).json({ success: false, message: 'Attendance changed while assigning the replacement. Reload and verify the roster.' });
     }
+
+    req.app.get('io')?.emit('staff-attendance-updated', {
+      staffId: String(absentStaffId),
+      replacementStaffId: String(replacementStaffId),
+      date,
+    });
 
     return res.status(200).json({
       success: true,

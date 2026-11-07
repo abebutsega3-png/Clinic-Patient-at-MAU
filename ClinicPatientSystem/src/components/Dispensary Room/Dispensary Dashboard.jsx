@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import axios from 'axios';
+import { io } from 'socket.io-client';
 import {
   AlertTriangle,
   ArrowRight,
   CalendarDays,
+  CalendarCheck,
   ClipboardList,
   Clock3,
   Package,
@@ -12,6 +15,111 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+
+const EmployeeAttendanceCard = () => {
+  const { token } = useAuth();
+  const [summary, setSummary] = useState(null);
+  const [loadingAttendance, setLoadingAttendance] = useState(true);
+  const [attendanceError, setAttendanceError] = useState('');
+
+  const loadAttendance = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/attendance/summary', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSummary(data.data);
+      setAttendanceError('');
+    } catch (loadError) {
+      console.error('Failed to load dashboard attendance:', loadError);
+      setAttendanceError(loadError.response?.data?.message || 'Unable to load attendance.');
+    } finally {
+      setLoadingAttendance(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void Promise.resolve().then(loadAttendance);
+    const timer = window.setInterval(loadAttendance, 30000);
+    const socket = io({ auth: { token } });
+    socket.on('staff-attendance-updated', loadAttendance);
+    return () => {
+      window.clearInterval(timer);
+      socket.off('staff-attendance-updated', loadAttendance);
+      socket.disconnect();
+    };
+  }, [loadAttendance, token]);
+
+  const present = summary?.present || 0;
+  const absent = summary?.absent || 0;
+  const unreported = summary?.unreported || 0;
+  const percentage = summary?.percentage || 0;
+  const absentPercentage = summary?.total ? (absent / summary.total) * 100 : 0;
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <header className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <CalendarCheck size={18} className="text-blue-700" aria-hidden="true" />
+          <h2 className="font-bold text-slate-900">Employee Attendance</h2>
+        </div>
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Live
+        </span>
+      </header>
+
+      <div className="p-3">
+        {loadingAttendance && !summary ? (
+          <p className="py-12 text-center text-xs text-slate-500">Loading attendance…</p>
+        ) : attendanceError && !summary ? (
+          <div className="space-y-3 py-5 text-center">
+            <p role="alert" className="text-xs text-rose-700">{attendanceError}</p>
+            <button type="button" onClick={() => void loadAttendance()} className="text-xs font-semibold text-blue-700 hover:underline">Try again</button>
+          </div>
+        ) : (
+          <>
+            <div
+              role="img"
+              aria-label={`${percentage}% attendance: ${present} present, ${absent} absent`}
+              className="mx-auto flex h-28 w-28 items-center justify-center rounded-full"
+              style={{
+                background: summary?.total
+                  ? `conic-gradient(#10b981 0% ${percentage}%, #f43f5e ${percentage}% ${Math.min(percentage + absentPercentage, 100)}%, #e2e8f0 ${Math.min(percentage + absentPercentage, 100)}% 100%)`
+                  : 'conic-gradient(#e2e8f0 0% 100%)'
+              }}
+            >
+              <div className="flex h-[84px] w-[84px] flex-col items-center justify-center rounded-full bg-white">
+                <span className="text-xl font-extrabold leading-tight text-slate-900">{loadingAttendance ? '—' : `${percentage}%`}</span>
+                <span className="text-[10px] font-semibold text-slate-600">Present</span>
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" />Present</span>
+                <strong className="text-slate-800">{present}</strong>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-rose-600"><span className="h-2 w-2 rounded-full bg-rose-500" />Absent</span>
+                <strong className="text-slate-800">{absent}</strong>
+              </div>
+              {unreported > 0 && (
+                <div className="flex items-center justify-between text-slate-500">
+                  <span>Not yet reported</span>
+                  <strong>{unreported}</strong>
+                </div>
+              )}
+            </div>
+
+            {attendanceError && <p role="alert" className="mt-2 text-center text-[10px] text-rose-700">{attendanceError}</p>}
+            <Link to="/dispensary/attendance" className="mx-auto mt-3 flex w-fit items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-blue-700">
+              View Details <ArrowRight size={13} aria-hidden="true" />
+            </Link>
+          </>
+        )}
+      </div>
+    </section>
+  );
+};
 
 const emptyDashboard = {
   summary: {},
@@ -79,8 +187,18 @@ const DispensaryDashboard = ({ showAllPrescriptions = false }) => {
   useEffect(() => {
     void Promise.resolve().then(loadDashboard);
     const timer = window.setInterval(loadDashboard, 30000);
-    return () => window.clearInterval(timer);
-  }, [loadDashboard, refreshKey]);
+    const socket = io({ auth: { token } });
+    socket.on('clinic:prescription-updated', loadDashboard);
+    socket.on('clinic:inventory-updated', loadDashboard);
+    socket.on('clinic:queue-updated', loadDashboard);
+    return () => {
+      window.clearInterval(timer);
+      socket.off('clinic:prescription-updated', loadDashboard);
+      socket.off('clinic:inventory-updated', loadDashboard);
+      socket.off('clinic:queue-updated', loadDashboard);
+      socket.disconnect();
+    };
+  }, [loadDashboard, refreshKey, token]);
 
   const refreshDashboard = () => {
     setLoading(true);
@@ -127,7 +245,7 @@ const DispensaryDashboard = ({ showAllPrescriptions = false }) => {
     }
   };
 
-  const pendingPrescriptionCount = dashboard.pendingPrescriptions?.length ?? dashboard.summary.pendingDispenseCount;
+  const pendingPrescriptionCount = dashboard.summary.pendingDispenseCount ?? dashboard.pendingPrescriptions?.length ?? 0;
   const metrics = useMemo(() => [
     {
       label: "Today's Pharmacy Queue",
@@ -227,71 +345,150 @@ const DispensaryDashboard = ({ showAllPrescriptions = false }) => {
           ) : dashboard.pendingPrescriptions.length === 0 ? (
             <p className="p-8 text-center text-sm text-slate-500">No prescriptions are waiting for pharmacy processing.</p>
           ) : (
-            <>
-              <div className="divide-y divide-slate-100">
-                {(showAllPrescriptions ? dashboard.pendingPrescriptions : dashboard.pendingPrescriptions.slice(0, 5)).map((visit) => (
-                  <article key={visit.visitId} className="space-y-3 p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <p className="font-semibold text-slate-800">{visit.patientName} · MRN: {visit.cardNumber}</p>
-                        <p className="text-[11px] text-slate-500">{visit.studentId ? `Student ID: ${visit.studentId} · ` : ''}{visit.visitNumber || visit.visitId} · {formatDate(visit.visitDate)} · {visit.diagnosis || 'No diagnosis recorded'}</p>
-                        {visit.allergies?.length > 0 && (
-                          <p role="alert" className="mt-1 flex items-start gap-1.5 rounded-md border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-bold text-rose-800">
-                            <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                            Allergies: {visit.allergies.join(', ')}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-left text-xs">
+                <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-600">
+                  <tr>
+                    <th scope="col" className="px-3 py-3">Patient name &amp; MRN</th>
+                    <th scope="col" className="px-3 py-3">Prescriber</th>
+                    <th scope="col" className="px-3 py-3">Medicines, quantity &amp; price</th>
+                    <th scope="col" className="px-3 py-3">Status</th>
+                    <th scope="col" className="px-3 py-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(showAllPrescriptions ? dashboard.pendingPrescriptions : dashboard.pendingPrescriptions.slice(0, 5)).map((visit) => {
+                    const hasStockForAll = visit.prescriptions.every((item) => (
+                      Number(item.stock?.quantity) > 0
+                      && /^\d+(?:\.\d+)?$/.test(String(item.quantity || '').trim())
+                      && Number(item.quantity) <= Number(item.stock.quantity)
+                    ));
+                    const validPrices = visit.prescriptions.every((item) => {
+                      const value = priceInputs[item.id] || { birr: '0', cent: '00' };
+                      return /^\d+$/.test(value.birr)
+                        && /^\d{1,2}$/.test(value.cent)
+                        && Number(value.cent) <= 99;
+                    });
+                    const cents = visit.prescriptions.reduce((sum, item) => {
+                      const value = priceInputs[item.id] || { birr: '0', cent: '0' };
+                      return sum + (Number(value.birr) * 100) + Number(value.cent);
+                    }, 0);
+                    const hasDocumentedAllergies = visit.allergies?.some((allergy) => (
+                      typeof allergy === 'string'
+                      && allergy.trim()
+                      && !/^(nka|no known allergies)$/i.test(allergy.trim())
+                    ));
+                    const allergyVerified = Boolean(
+                      visit.allergyReviewed
+                      && visit.allergyVerification === (hasDocumentedAllergies ? 'known-allergies' : 'nka'),
+                    );
+                    return (
+                      <tr key={visit.visitId} className="align-top hover:bg-slate-50/70">
+                        <td className="min-w-[180px] px-3 py-3">
+                          <p className="font-semibold text-slate-800">{visit.patientName}</p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">MRN: {visit.cardNumber}</p>
+                          <p className="text-[10px] text-slate-400">{visit.visitNumber || visit.visitId} · {formatDate(visit.visitDate)}</p>
+                          {hasDocumentedAllergies ? (
+                            <p role="alert" className="mt-1 flex items-start gap-1 text-[10px] font-semibold text-rose-700">
+                              <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                              Allergies: {visit.allergies.filter((allergy) => !/^(nka|no known allergies)$/i.test(allergy.trim())).join(', ')}
+                            </p>
+                          ) : (
+                            <p role="status" className={`mt-1 text-[10px] font-semibold ${allergyVerified ? 'text-emerald-700' : 'text-amber-700'}`}>
+                              {allergyVerified ? 'NKA verified' : 'Allergy verification required'}
+                            </p>
+                          )}
+                        </td>
+                        <td className="min-w-[110px] px-3 py-3 font-medium text-slate-700">
+                          {visit.prescriber?.name || '—'}
+                        </td>
+                        <td className="min-w-[300px] px-3 py-3">
+                          <ul className="space-y-3">
+                            {visit.prescriptions.map((item) => (
+                              <li key={item.id} className="border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                                <p className="font-semibold text-slate-800">{item.medicine} {item.strength} {item.form}</p>
+                                <p className="text-[10px] text-slate-500">{[item.dose, item.frequency, item.duration, item.instructions].filter(Boolean).join(' · ') || 'No usage instructions recorded'}</p>
+                                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                  <span className="text-[10px] text-slate-600">
+                                    Qty: {[item.quantity, item.quantityUnit].filter(Boolean).join(' ') || 'Not specified'}
+                                  </span>
+                                  <span className={`text-[10px] font-semibold ${item.stock?.quantity > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                    {item.stock?.quantity > 0
+                                      ? `Stock: ${item.stock.quantity} ${item.stock.unit || ''}`
+                                      : item.stock?.status === 'not_listed' ? 'Not listed in inventory' : 'Out of stock'}
+                                  </span>
+                                  <label className="flex items-center gap-1 text-[10px] text-slate-600">
+                                    Price
+                                    <input
+                                      aria-label={`${item.medicine} price in Birr`}
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={priceInputs[item.id]?.birr ?? '0'}
+                                      onChange={(event) => setPriceInputs((current) => ({ ...current, [item.id]: { ...current[item.id], birr: event.target.value } }))}
+                                      className="w-14 rounded border border-slate-300 px-1.5 py-1 text-xs"
+                                    />
+                                    Birr
+                                    <input
+                                      aria-label={`${item.medicine} price in cents`}
+                                      type="number"
+                                      min="0"
+                                      max="99"
+                                      step="1"
+                                      value={priceInputs[item.id]?.cent ?? '00'}
+                                      onChange={(event) => setPriceInputs((current) => ({ ...current, [item.id]: { ...current[item.id], cent: event.target.value } }))}
+                                      className="w-12 rounded border border-slate-300 px-1.5 py-1 text-xs"
+                                    />
+                                    Cent
+                                  </label>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="mt-2 text-right text-[11px] font-bold text-slate-700">
+                            Total: {Math.floor(cents / 100)} Birr {String(cents % 100).padStart(2, '0')} Cent
                           </p>
-                        )}
-                        {!visit.allergies?.length && (
-                          <p role="status" className="mt-1 text-[11px] font-semibold text-amber-700">Allergy status not recorded — verify with the patient.</p>
-                        )}
-                        {visit.prescriber?.name && <p className="text-[11px] text-slate-500">Prescriber: {visit.prescriber.name}</p>}
-                      </div>
-                      <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">{visit.status}</span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[500px] text-left text-xs">
-                        <thead className="bg-slate-50 text-slate-600"><tr><th className="p-2">Medicine &amp; instructions</th><th className="p-2">Quantity / Stock</th><th className="p-2">Price (Birr / Cent)</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {visit.prescriptions.map((item) => (
-                            <tr key={item.id}>
-                              <td className="p-2 font-medium">
-                                {item.medicine} {item.strength} {item.form}
-                                <span className="block font-normal text-slate-500">{[item.dose, item.frequency, item.duration, item.instructions].filter(Boolean).join(' · ') || 'No usage instructions recorded'}</span>
-                              </td>
-                              <td className="p-2">
-                                <span className="block">{[item.quantity, item.quantityUnit].filter(Boolean).join(' ') || 'Quantity not specified'}</span>
-                                <span className={`block text-[11px] font-semibold ${item.stock?.quantity > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                                  {item.stock?.quantity > 0
-                                    ? `In stock: ${item.stock.quantity} ${item.stock.unit || ''}`
-                                    : item.stock?.status === 'not_listed' ? 'Not listed in inventory' : 'Out of stock'}
-                                </span>
-                                {item.stock?.batches?.length > 0 && <span className="block text-[10px] text-slate-500">Soonest expiry: {formatDate(item.stock.batches.slice().sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))[0].expiryDate)}</span>}
-                              </td>
-                              <td className="p-2"><div className="flex items-center gap-1"><input aria-label={`${item.medicine} price in Birr`} type="number" min="0" step="1" value={priceInputs[item.id]?.birr ?? '0'} onChange={(event) => setPriceInputs((current) => ({ ...current, [item.id]: { ...current[item.id], birr: event.target.value } }))} className="w-20 rounded border border-slate-300 px-2 py-1" /><span>Birr</span><input aria-label={`${item.medicine} price in cents`} type="number" min="0" max="99" step="1" value={priceInputs[item.id]?.cent ?? '00'} onChange={(event) => setPriceInputs((current) => ({ ...current, [item.id]: { ...current[item.id], cent: event.target.value } }))} className="w-16 rounded border border-slate-300 px-2 py-1" /><span>Cent</span></div></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="text-right text-xs font-bold text-slate-700">
-                      Total: {(() => {
-                        const cents = visit.prescriptions.reduce((sum, item) => {
-                          const value = priceInputs[item.id] || { birr: '0', cent: '0' };
-                          return sum + (Number(value.birr) * 100) + Number(value.cent);
-                        }, 0);
-                        return `${Math.floor(cents / 100)} Birr ${String(cents % 100).padStart(2, '0')} Cent`;
-                      })()}
-                    </p>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <button type="button" disabled={processingVisitId === visit.visitId} onClick={() => void updatePrescription(visit, 'Cancelled')} className="rounded-md border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50">Cancel</button>
-                      <button type="button" disabled={processingVisitId === visit.visitId || visit.prescriptions.some((item) => !item.stock?.quantity || !/^\d+(?:\.\d+)?$/.test(String(item.quantity || '').trim()) || Number(item.quantity) > item.stock.quantity)} onClick={() => void updatePrescription(visit, 'Dispensed')} className="rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">{processingVisitId === visit.visitId ? 'Saving…' : 'Dispense all medicines'}</button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3">
+                          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-800">{visit.status}</span>
+                        </td>
+                        <td className="min-w-[120px] px-3 py-3">
+                          <div className="flex flex-col items-start gap-2">
+                            <Link
+                              to="/dispensary/pending-orders"
+                              className="font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+                            >
+                              View
+                            </Link>
+                            <button
+                              type="button"
+                              disabled={processingVisitId === visit.visitId || !hasStockForAll || !validPrices || !allergyVerified}
+                              onClick={() => void updatePrescription(visit, 'Dispensed')}
+                              title={!allergyVerified ? 'Save allergy verification from the prescription details before dispensing.' : ''}
+                              className="rounded-md bg-emerald-700 px-3 py-1.5 font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {processingVisitId === visit.visitId ? 'Saving…' : 'Dispense'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={processingVisitId === visit.visitId}
+                              onClick={() => void updatePrescription(visit, 'Cancelled')}
+                              className="font-medium text-rose-700 hover:underline disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
+
+        <EmployeeAttendanceCard />
 
         <section className="overflow-hidden rounded-xl border border-rose-200 bg-white shadow-sm">
           <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-rose-700 to-red-600 px-4 py-3 text-white">

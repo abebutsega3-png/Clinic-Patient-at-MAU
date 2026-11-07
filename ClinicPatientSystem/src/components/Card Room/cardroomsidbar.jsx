@@ -3,6 +3,7 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  Megaphone,
   ShoppingCart,
   UserRound,
 } from 'lucide-react';
@@ -15,6 +16,7 @@ const menuItems = [
   { label: 'Patient Card / Records', path: '/card-room/records', icon: FileText },
     { label: 'Requests & Procurement', path: '/card-room/requests-and-procurement', icon: ShoppingCart },
   { label: 'Reports', path: '/card-room/reports', icon: ClipboardList },
+  { label: 'Announcements', path: '/announcements', icon: Megaphone },
 ];
 
 const CardRoomSidebar = ({ isOpen = true, onNavigate, onLogout }) => (

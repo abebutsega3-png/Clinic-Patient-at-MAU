@@ -232,6 +232,7 @@ export const receiveDispensaryStock = async (req, res) => {
       entityId: savedTransaction._id,
       details: `Received ${quantity} ${uom} of ${itemDescription} under Model 19 ${modelNumber}.`,
     });
+    req.app.get('io')?.emit('clinic:inventory-updated');
     return res.status(201).json({ success: true, message: 'Stock received and Model 19 transaction recorded.', data: savedTransaction });
   } catch (error) {
     return transactionFailure(res, error, 'receive stock');
@@ -380,6 +381,7 @@ export const issueDispensaryStock = async (req, res) => {
       entityId: savedTransaction._id,
       details: `Issued ${quantity} ${itemUnitFrom(savedTransaction)} under Model 22 ${modelNumber} to ${destination}.`,
     });
+    req.app.get('io')?.emit('clinic:inventory-updated');
     return res.status(200).json({ success: true, message: 'Stock issued and Model 22 transaction recorded.', data: savedTransaction });
   } catch (error) {
     return transactionFailure(res, error, 'issue stock');

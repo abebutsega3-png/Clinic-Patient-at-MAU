@@ -2,8 +2,12 @@ import mongoose from 'mongoose';
 
 const attendanceSchema = new mongoose.Schema({
   staffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Staff', required: true },
+  staffName: { type: String, trim: true, default: '' },
+  role: { type: String, trim: true, default: 'Staff' },
   date: { type: String, required: true },
   status: { type: String, enum: ['present', 'absent', 'late'], required: true },
+  checkInTime: { type: Date, default: null },
+  checkOutTime: { type: Date, default: null },
   timeIn: { type: String, match: /^$|^([01]\d|2[0-3]):[0-5]\d$/, default: '' },
   timeOut: { type: String, match: /^$|^([01]\d|2[0-3]):[0-5]\d$/, default: '' },
   note: { type: String, trim: true, default: '' },

@@ -16,6 +16,8 @@ const PrescriptionsDispensing = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [processingVisitId, setProcessingVisitId] = useState('');
+  const [verificationSavingVisitId, setVerificationSavingVisitId] = useState('');
+  const [success, setSuccess] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [priceInputs, setPriceInputs] = useState({});
 
@@ -28,7 +30,10 @@ const PrescriptionsDispensing = () => {
       throw new Error(result?.message || `Unable to load prescriptions (${response.status}).`);
     }
     const prescriptions = result.data.pendingPrescriptions || [];
-    setPendingPrescriptions(prescriptions);
+    setPendingPrescriptions(prescriptions.map((visit) => ({
+      ...visit,
+      verificationSelection: visit.allergyVerification || '',
+    })));
     setPriceInputs((current) => Object.fromEntries(prescriptions.flatMap((visit) => visit.prescriptions.map((item) => {
       const currentPrice = current[item.id];
       const priceCents = Number(item.priceCents) || 0;
@@ -68,7 +73,39 @@ const PrescriptionsDispensing = () => {
     void Promise.resolve().then(loadData);
   }, [loadData, refreshKey]);
 
-  const updatePrescription = async (visit, status, allergyReviewed = false) => {
+  const saveAllergyVerification = async (visit) => {
+    const verification = visit.verificationSelection || '';
+    if (!verification) {
+      setError('Select the patient allergy status before saving verification.');
+      return;
+    }
+    setVerificationSavingVisitId(visit.visitId);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await fetch(`/api/dispensary/prescriptions/${encodeURIComponent(visit.visitId)}/allergy-verification`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: ['Bearer', token].join(' '),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ verification }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || `Unable to save allergy verification (${response.status}).`);
+      }
+      setSuccess(result.message || 'Patient allergy verification saved.');
+      await loadPendingPrescriptions();
+    } catch (verificationError) {
+      console.error('Failed to save prescription allergy verification:', verificationError);
+      setError(verificationError.message || 'Unable to save patient allergy verification.');
+    } finally {
+      setVerificationSavingVisitId('');
+    }
+  };
+
+  const updatePrescription = async (visit, status) => {
     const prices = visit.prescriptions.map((item) => {
       const value = priceInputs[item.id] || { birr: '0', cent: '00' };
       return { id: item.id, priceCents: Number(value.birr) * 100 + Number(value.cent) };
@@ -82,6 +119,7 @@ const PrescriptionsDispensing = () => {
     }
     setProcessingVisitId(visit.visitId);
     setError('');
+    setSuccess('');
     try {
       const response = await fetch(`/api/dispensary/prescriptions/${encodeURIComponent(visit.visitId)}`, {
         method: 'PATCH',
@@ -92,7 +130,6 @@ const PrescriptionsDispensing = () => {
         body: JSON.stringify({
           status,
           prices,
-          allergyReviewed,
         }),
       });
       const result = await response.json().catch(() => null);
@@ -132,6 +169,7 @@ const PrescriptionsDispensing = () => {
       </header>
 
       {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
+      {success && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{success}</p>}
       {loading && <p role="status" className="rounded-lg border border-slate-200 bg-white p-4 text-slate-600">Loading prescription data…</p>}
 
       {!loading && activeTab === 'pending' && (
@@ -143,6 +181,15 @@ const PrescriptionsDispensing = () => {
         ) : (
           <div className="space-y-4">
             {pendingPrescriptions.map((visit) => {
+              const knownAllergies = (visit.allergies || []).filter((allergy) => (
+                typeof allergy === 'string' && allergy.trim() && !/^(nka|no known allergies)$/i.test(allergy.trim())
+              ));
+              const expectedVerification = knownAllergies.length > 0 ? 'known-allergies' : 'nka';
+              const currentSelection = visit.verificationSelection ?? visit.allergyVerification ?? '';
+              const verificationSelection = currentSelection === expectedVerification ? currentSelection : '';
+              const verificationIsCurrent = Boolean(
+                visit.allergyReviewed && verificationSelection === visit.allergyVerification,
+              );
               const hasAvailableStock = visit.prescriptions.every((medicine) => (
                 Number(medicine.stock?.quantity) >= Number(medicine.quantity)
                 && Number(medicine.quantity) > 0
@@ -178,10 +225,20 @@ const PrescriptionsDispensing = () => {
                     <p><strong>Prescription status:</strong> <span className="font-bold text-amber-800">{visit.status || 'Pending'}</span></p>
                   </div>
 
-                  {visit.allergies?.length > 0 ? (
+                  {knownAllergies.length > 0 ? (
                     <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 font-bold text-rose-800">
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                      <div><p>Allergy warning: {visit.allergies.join(', ')}</p><p className="mt-1 text-[11px] font-medium">Review these allergies against the prescribed medicines before dispensing.</p></div>
+                      <div>
+                        <p>Allergy warning: {knownAllergies.join(', ')}</p>
+                        <p className="mt-1 text-[11px] font-medium">{verificationIsCurrent
+                          ? 'These known allergies were reviewed with the patient.'
+                          : 'Review these allergies against the prescribed medicines and confirm them with the patient.'}</p>
+                      </div>
+                    </div>
+                  ) : verificationIsCurrent ? (
+                    <div role="status" className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 font-semibold text-emerald-800">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0" />
+                      <p>No Known Allergies (NKA) was confirmed with the patient.</p>
                     </div>
                   ) : (
                     <div role="status" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-800">
@@ -228,17 +285,40 @@ const PrescriptionsDispensing = () => {
 
                   <footer className="grid gap-3 border-t border-slate-300 pt-3 text-[11px] sm:grid-cols-3">
                     <div><strong className="underline">Prescriber’s</strong><p>Name: {visit.prescriber?.name || '—'}</p><p>Qualification: {visit.prescriber?.qualification || '—'}</p><p>Registration: {visit.prescriber?.registration || '—'}</p><p>Date: {formatDate(visit.prescriber?.signedAt)}</p></div>
-                    <div><strong className="underline">Evaluator’s (Pharmacist / Dispenser)</strong><p>Name: {visit.evaluatedBy || user?.name || '—'}</p><p>Date: {visit.evaluatedAt ? formatDate(visit.evaluatedAt) : 'Recorded when order is processed'}</p><p>Allergy review: {visit.allergyReviewedBy ? `${visit.allergyReviewedBy} · ${formatDate(visit.allergyReviewedAt)}` : 'Required before dispensing'}</p></div>
+                    <div><strong className="underline">Evaluator’s (Pharmacist / Dispenser)</strong><p>Name: {visit.evaluatedBy || user?.name || '—'}</p><p>Date: {visit.evaluatedAt ? formatDate(visit.evaluatedAt) : 'Recorded when order is processed'}</p><p>Allergy review: {visit.allergyReviewed ? `${visit.allergyVerification === 'nka' ? 'NKA confirmed' : 'Known allergies reviewed'} by ${visit.allergyReviewedBy} · ${formatDate(visit.allergyReviewedAt)}` : visit.allergyReviewedBy ? 'Re-verify: patient allergy record has changed' : 'Required before dispensing'}</p></div>
                     <div><strong className="underline">Dispenser’s</strong><p>Name: {visit.dispensedBy || '—'}</p><p>Date: {formatDate(visit.dispensedAt)}</p></div>
                   </footer>
 
                   <div className="flex flex-wrap justify-end gap-2 border-t pt-3 font-sans">
                     <button type="button" disabled={processingVisitId === visit.visitId} onClick={() => void updatePrescription(visit, 'Cancelled')} className="rounded-lg border border-rose-200 px-4 py-2 font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50">Cancel order</button>
-                    <label className="mr-auto flex items-center gap-2 text-xs font-sans font-semibold text-slate-700">
-                      <input type="checkbox" checked={Boolean(visit.allergyReviewed)} onChange={(event) => setPendingPrescriptions((current) => current.map((item) => item.visitId === visit.visitId ? { ...item, allergyReviewed: event.target.checked } : item))} />
-                      I reviewed and verified the patient’s allergy status with the patient
-                    </label>
-                    <button type="button" disabled={!hasAvailableStock || !visit.allergyReviewed || processingVisitId === visit.visitId} onClick={() => void updatePrescription(visit, 'Dispensed', visit.allergyReviewed)} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
+                    <div className="mr-auto flex flex-wrap items-center gap-2 text-xs font-sans font-semibold text-slate-700">
+                      <label htmlFor={`allergy-verification-${visit.visitId}`}>Confirm with patient:</label>
+                      <select
+                        id={`allergy-verification-${visit.visitId}`}
+                        value={verificationSelection}
+                        onChange={(event) => setPendingPrescriptions((current) => current.map((item) => item.visitId === visit.visitId
+                          ? { ...item, verificationSelection: event.target.value }
+                          : item))}
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-2"
+                      >
+                        <option value="">Select allergy status</option>
+                        {knownAllergies.length > 0
+                          ? <option value="known-allergies">Known allergies reviewed</option>
+                          : <option value="nka">No Known Allergies (NKA)</option>}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!verificationSelection
+                          || verificationIsCurrent
+                          || verificationSavingVisitId === visit.visitId
+                          || processingVisitId === visit.visitId}
+                        onClick={() => void saveAllergyVerification({ ...visit, verificationSelection })}
+                        className="rounded-lg border border-blue-300 px-3 py-2 font-bold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {verificationSavingVisitId === visit.visitId ? 'Saving…' : verificationIsCurrent ? 'Verification Saved' : 'Save Verification'}
+                      </button>
+                    </div>
+                    <button type="button" disabled={!hasAvailableStock || !verificationIsCurrent || processingVisitId === visit.visitId} onClick={() => void updatePrescription(visit, 'Dispensed')} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
                       <Check className="h-4 w-4" /> {processingVisitId === visit.visitId ? 'Saving…' : 'Confirm & Dispense'}
                     </button>
                   </div>

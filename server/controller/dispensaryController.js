@@ -9,6 +9,13 @@ import Patient from '../module/Patient.js';
 import { writeAuditEvent } from '../utils/auditLogger.js';
 
 const clinicTimeZone = 'Africa/Addis_Ababa';
+const hasDocumentedAllergies = (allergies = []) => (
+  allergies.some((allergy) => (
+    typeof allergy === 'string'
+    && allergy.trim()
+    && !/^(nka|no known allergies)$/i.test(allergy.trim())
+  ))
+);
 const getClinicDateKey = (date) => {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en', {
     timeZone: clinicTimeZone,
@@ -38,12 +45,21 @@ export const getDispensaryDashboard = async (req, res) => {
           { 'examination.prescriptionStatus': { $exists: false } },
         ],
       })
-        .select('visitId patientId patientName patientRecordId visitDate diagnosis examination.vitals examination.prescriptionPatientType examination.prescriptions examination.prescriptionStatus examination.prescriber examination.prescriptionEvaluatedBy examination.prescriptionEvaluatedAt examination.prescriptionAllergyReviewedBy examination.prescriptionAllergyReviewedAt examination.prescriptionDispensedBy examination.prescriptionDispensedAt')
+        .select('visitId patientId patientName patientRecordId visitDate diagnosis examination.vitals examination.prescriptionPatientType examination.prescriptions examination.prescriptionStatus examination.prescriber examination.prescriptionEvaluatedBy examination.prescriptionEvaluatedAt examination.prescriptionAllergyReviewedBy examination.prescriptionAllergyReviewedAt examination.prescriptionAllergyVerification examination.prescriptionDispensedBy examination.prescriptionDispensedAt')
         .populate({ path: 'patientRecordId', select: 'fullName cardNumber universityIdNumber governmentIdNumber age sex phoneNumber region town woreda kebele allergies' })
         .sort({ visitDate: 1 })
         .limit(100)
         .lean(),
     ]);
+    const unlinkedPatientIds = [...new Set(prescriptionVisits
+      .filter((visit) => !visit.patientRecordId && visit.patientId)
+      .map((visit) => visit.patientId))];
+    const unlinkedPatients = unlinkedPatientIds.length
+      ? await Patient.find({ patientId: { $in: unlinkedPatientIds } })
+        .select('patientId fullName cardNumber universityIdNumber governmentIdNumber age sex phoneNumber region town woreda kebele allergies')
+        .lean()
+      : [];
+    const unlinkedPatientsById = new Map(unlinkedPatients.map((patient) => [patient.patientId, patient]));
 
     const expiryWarningDays = settings?.inventoryRules?.expiryWarningDays || 90;
     const expiryWarningDate = new Date(Date.now() + expiryWarningDays * 24 * 60 * 60 * 1000);
@@ -69,12 +85,15 @@ export const getDispensaryDashboard = async (req, res) => {
       const firstAlertExpiry = entries
         .filter((batch) => batch.expired || batch.expiringSoon)
         .sort((left, right) => new Date(left.expiryDate) - new Date(right.expiryDate))[0]?.expiryDate;
-      const availableQuantity = (Array.isArray(item.batches) && item.batches.length
-        ? item.batches
-          .filter((batch) => Number(batch.quantity) > 0 && String(batch.batchNumber || '').trim()
-            && batch.expiryDate && new Date(batch.expiryDate) >= new Date())
-          .reduce((sum, batch) => sum + Number(batch.quantity), 0)
-        : 0);
+      const availableQuantity = Array.isArray(item.batches) && item.batches.length
+        ? Math.min(
+          item.batches
+            .filter((batch) => Number(batch.quantity) > 0 && String(batch.batchNumber || '').trim()
+              && batch.expiryDate && new Date(batch.expiryDate) >= new Date())
+            .reduce((sum, batch) => sum + Number(batch.quantity), 0),
+          Number(item.quantity) || 0,
+        )
+        : 0;
       const categoryThreshold = thresholds.get(String(item.category || '').trim().toLocaleLowerCase());
       const reorderLevel = categoryThreshold ?? defaultThreshold ?? Number(item.reorderLevel);
       return {
@@ -96,13 +115,16 @@ export const getDispensaryDashboard = async (req, res) => {
         status: { $in: ['waiting', 'called', 'routed', 'in_progress'] },
       }
       : null;
+    const pendingPrescriptionFilter = {
+      'examination.prescriptions.0': { $exists: true },
+      $or: [
+        { 'examination.prescriptionStatus': { $in: ['Pending', 'Partially dispensed', ''] } },
+        { 'examination.prescriptionStatus': { $exists: false } },
+      ],
+    };
     const [todayQueueCount, pendingDispenseCount, queue, weeklyTrend, topDispensed] = await Promise.all([
-      queueFilter ? Queue.countDocuments({
-        clinicDate: today,
-        department: dispensaryDepartment.name,
-        status: { $nin: ['cancelled', 'no_show'] },
-      }) : Promise.resolve(null),
       queueFilter ? Queue.countDocuments(queueFilter) : Promise.resolve(null),
+      queueFilter ? ClinicVisit.countDocuments(pendingPrescriptionFilter) : Promise.resolve(null),
       queueFilter ? Queue.find(queueFilter)
         .select('patientId patientName visitId queueNumber priority status arrivedAt')
         .sort({ priority: -1, arrivedAt: 1 })
@@ -158,7 +180,12 @@ export const getDispensaryDashboard = async (req, res) => {
     const lowStockItems = inventoryStatus
       .filter((item) => ['low_stock', 'out_of_stock'].includes(item.computedStatus))
       .slice(0, 5)
-      .map(({ itemName, quantity, unit, computedStatus }) => ({ itemName, quantity, unit, status: computedStatus }));
+      .map(({ itemName, availableQuantity, unit, computedStatus }) => ({
+        itemName,
+        quantity: availableQuantity,
+        unit,
+        status: computedStatus,
+      }));
     const expiryItems = inventoryStatus
       .filter((item) => item.expired || item.expiringSoon)
       .sort((left, right) => new Date(left.firstAlertExpiry || 0) - new Date(right.firstAlertExpiry || 0))
@@ -199,63 +226,74 @@ export const getDispensaryDashboard = async (req, res) => {
           arrivedAt: item.arrivedAt,
           prescriptionAvailable: false,
         })),
-        pendingPrescriptions: prescriptionVisits.map((visit) => ({
-          visitId: String(visit._id),
-          visitNumber: visit.visitId || '',
-          patientName: visit.patientRecordId?.fullName || visit.patientName || 'Patient',
-          cardNumber: visit.patientRecordId?.cardNumber || visit.patientId || '—',
-          sex: visit.patientRecordId?.sex || '',
-          age: visit.patientRecordId?.age ?? null,
-          governmentIdNumber: visit.patientRecordId?.governmentIdNumber || '',
-          phoneNumber: visit.patientRecordId?.phoneNumber || '',
-          region: visit.patientRecordId?.region || '',
-          town: visit.patientRecordId?.town || '',
-          woreda: visit.patientRecordId?.woreda || '',
-          kebele: visit.patientRecordId?.kebele || '',
-          visitDate: visit.visitDate,
-          diagnosis: visit.diagnosis || '',
-          studentId: visit.patientRecordId?.universityIdNumber || '',
-          allergies: visit.patientRecordId?.allergies || [],
-          status: visit.examination?.prescriptionStatus || 'Pending',
-          patientType: visit.examination?.prescriptionPatientType || 'outpatient',
-          weight: visit.examination?.vitals?.weight || '',
-          prescriber: visit.examination?.prescriber || {},
-          evaluatedBy: visit.examination?.prescriptionEvaluatedBy || '',
-          evaluatedAt: visit.examination?.prescriptionEvaluatedAt || null,
-          allergyReviewedBy: visit.examination?.prescriptionAllergyReviewedBy || '',
-          allergyReviewedAt: visit.examination?.prescriptionAllergyReviewedAt || null,
-          dispensedBy: visit.examination?.prescriptionDispensedBy || '',
-          dispensedAt: visit.examination?.prescriptionDispensedAt || null,
-          prescriptions: (visit.examination?.prescriptions || []).map((item) => ({
-            id: String(item._id),
-            medicine: item.medicine,
-            strength: item.strength || '',
-            form: item.form || '',
-            dose: item.dose || item.dosage || '',
-            frequency: item.frequency || '',
-            duration: item.duration || '',
-            instructions: item.instructions || '',
-            quantity: item.quantity || '',
-            quantityUnit: item.quantityUnit || '',
-            priceCents: item.priceCents || 0,
-            stock: (() => {
-              const stockItem = inventoryStatus.find((candidate) => (
-                String(candidate.itemName || '').trim().toLowerCase()
-                === String(item.medicine || '').trim().toLowerCase()
-              ));
-              return stockItem
-                ? {
-                  quantity: stockItem.availableQuantity,
-                  unit: stockItem.unit,
-                  status: stockItem.computedStatus,
-                  batches: (stockItem.batches || [])
-                    .filter((batch) => Number(batch.quantity) > 0)
-                    .map(({ batchNumber, quantity, expiryDate }) => ({ batchNumber, quantity, expiryDate })),
-                }
-                : { quantity: 0, unit: '', status: 'not_listed', batches: [] };
-            })(),
-          })),
-        })),
+        pendingPrescriptions: prescriptionVisits.map((visit) => {
+          const patient = visit.patientRecordId || unlinkedPatientsById.get(visit.patientId);
+          return ({
+            visitId: String(visit._id),
+            visitNumber: visit.visitId || '',
+            patientName: patient?.fullName || visit.patientName || 'Patient',
+            cardNumber: patient?.cardNumber || visit.patientId || '—',
+            sex: patient?.sex || '',
+            age: patient?.age ?? null,
+            governmentIdNumber: patient?.governmentIdNumber || '',
+            phoneNumber: patient?.phoneNumber || '',
+            region: patient?.region || '',
+            town: patient?.town || '',
+            woreda: patient?.woreda || '',
+            kebele: patient?.kebele || '',
+            visitDate: visit.visitDate,
+            diagnosis: visit.diagnosis || '',
+            studentId: patient?.universityIdNumber || '',
+            allergies: patient?.allergies || [],
+            status: visit.examination?.prescriptionStatus || 'Pending',
+            patientType: visit.examination?.prescriptionPatientType || 'outpatient',
+            weight: visit.examination?.vitals?.weight || '',
+            prescriber: visit.examination?.prescriber || {},
+            evaluatedBy: visit.examination?.prescriptionEvaluatedBy || '',
+            evaluatedAt: visit.examination?.prescriptionEvaluatedAt || null,
+            allergyReviewedBy: visit.examination?.prescriptionAllergyReviewedBy || '',
+            allergyReviewedAt: visit.examination?.prescriptionAllergyReviewedAt || null,
+            allergyVerification: visit.examination?.prescriptionAllergyVerification || '',
+            allergyReviewed: Boolean(
+              visit.examination?.prescriptionAllergyVerification === (
+                hasDocumentedAllergies(patient?.allergies || []) ? 'known-allergies' : 'nka'
+              )
+              && visit.examination?.prescriptionAllergyReviewedBy
+              && visit.examination?.prescriptionAllergyReviewedAt
+            ),
+            dispensedBy: visit.examination?.prescriptionDispensedBy || '',
+            dispensedAt: visit.examination?.prescriptionDispensedAt || null,
+            prescriptions: (visit.examination?.prescriptions || []).map((item) => ({
+              id: String(item._id),
+              medicine: item.medicine,
+              strength: item.strength || '',
+              form: item.form || '',
+              dose: item.dose || item.dosage || '',
+              frequency: item.frequency || '',
+              duration: item.duration || '',
+              instructions: item.instructions || '',
+              quantity: item.quantity || '',
+              quantityUnit: item.quantityUnit || '',
+              priceCents: item.priceCents || 0,
+              stock: (() => {
+                const stockItem = inventoryStatus.find((candidate) => (
+                  String(candidate.itemName || '').trim().toLowerCase()
+                  === String(item.medicine || '').trim().toLowerCase()
+                ));
+                return stockItem
+                  ? {
+                    quantity: stockItem.availableQuantity,
+                    unit: stockItem.unit,
+                    status: stockItem.computedStatus,
+                    batches: (stockItem.batches || [])
+                      .filter((batch) => Number(batch.quantity) > 0)
+                      .map(({ batchNumber, quantity, expiryDate }) => ({ batchNumber, quantity, expiryDate })),
+                  }
+                  : { quantity: 0, unit: '', status: 'not_listed', batches: [] };
+              })(),
+            })),
+          });
+        }),
         alerts: { lowStockItems, expiryItems },
         inventory: inventoryStatus,
         expiryWarningDays,
@@ -297,17 +335,66 @@ export const getDispensaryHistory = async (req, res) => {
   }
 };
 
+export const savePrescriptionAllergyVerification = async (req, res) => {
+  const { visitId } = req.params;
+  const verification = typeof req.body?.verification === 'string' ? req.body.verification.trim() : '';
+  if (!visitId || !/^[a-f\d]{24}$/i.test(visitId) || !['nka', 'known-allergies'].includes(verification)) {
+    return res.status(400).json({ success: false, message: 'Select a valid patient allergy verification.' });
+  }
+
+  try {
+    const visit = await ClinicVisit.findById(visitId);
+    if (!visit) return res.status(404).json({ success: false, message: 'Prescription visit not found.' });
+    if (!visit.examination?.prescriptions?.length
+      || !['Pending', 'Partially dispensed'].includes(visit.examination.prescriptionStatus || 'Pending')) {
+      return res.status(409).json({ success: false, message: 'Allergy verification is available only for an active prescription.' });
+    }
+
+    let patient = visit.patientRecordId
+      ? await Patient.findById(visit.patientRecordId).select('allergies')
+      : null;
+    if (!patient) patient = await Patient.findOne({ patientId: visit.patientId }).select('allergies');
+    if (!patient) {
+      return res.status(409).json({ success: false, message: 'Patient allergy information is unavailable. Verify the patient record first.' });
+    }
+
+    const expectedVerification = hasDocumentedAllergies(patient.allergies) ? 'known-allergies' : 'nka';
+    if (verification !== expectedVerification) {
+      return res.status(409).json({
+        success: false,
+        message: expectedVerification === 'nka'
+          ? 'No allergy entries are recorded; confirm No Known Allergies with the patient.'
+          : 'Known allergies are recorded; review those allergies with the patient.',
+      });
+    }
+
+    const now = new Date();
+    visit.examination.prescriptionAllergyVerification = verification;
+    visit.examination.prescriptionAllergyReviewedBy = String(req.user?.name || '').trim();
+    visit.examination.prescriptionAllergyReviewedAt = now;
+    await visit.save();
+    await writeAuditEvent({
+      req,
+      action: 'PRESCRIPTION_ALLERGY_VERIFIED',
+      entityType: 'clinic_visit',
+      entityId: visit._id,
+      details: `Pharmacy recorded ${verification === 'nka' ? 'No Known Allergies' : 'known allergies reviewed'} for prescription ${visit.visitId || visit.patientId}.`,
+    });
+    req.app.get('io')?.emit('clinic:prescription-updated', { visitId: String(visit._id) });
+    return res.status(200).json({ success: true, message: 'Patient allergy verification saved.', data: visit });
+  } catch (error) {
+    console.error('Failed to save prescription allergy verification:', error);
+    return res.status(500).json({ success: false, message: 'Unable to save patient allergy verification.' });
+  }
+};
+
 export const updatePrescriptionDispensing = async (req, res) => {
   const { visitId } = req.params;
   const status = typeof req.body?.status === 'string' ? req.body.status.trim() : '';
-  const allergyReviewed = req.body?.allergyReviewed === true;
   const allowedStatuses = new Set(['Pending', 'Dispensed', 'Cancelled']);
   const prices = req.body?.prices;
   if (!visitId || !/^[a-f\d]{24}$/i.test(visitId) || !allowedStatuses.has(status) || !Array.isArray(prices)) {
     return res.status(400).json({ success: false, message: 'Provide a valid prescription status and medicine price list.' });
-  }
-  if (status === 'Dispensed' && !allergyReviewed) {
-    return res.status(409).json({ success: false, message: 'Review and confirm the patient allergy status before dispensing.' });
   }
   try {
     const session = await mongoose.startSession();
@@ -332,6 +419,27 @@ export const updatePrescriptionDispensing = async (req, res) => {
           const error = new Error('This prescription is no longer available for the requested status change.');
           error.statusCode = 409;
           throw error;
+        }
+        if (status === 'Dispensed') {
+          let patient = visit.patientRecordId
+            ? await Patient.findById(visit.patientRecordId).select('allergies').session(session)
+            : null;
+          if (!patient) {
+            patient = await Patient.findOne({ patientId: visit.patientId }).select('allergies').session(session);
+          }
+          if (!patient) {
+            const error = new Error('Patient allergy information is unavailable. Verify the patient record before dispensing.');
+            error.statusCode = 409;
+            throw error;
+          }
+          const expectedVerification = hasDocumentedAllergies(patient.allergies) ? 'known-allergies' : 'nka';
+          if (examination.prescriptionAllergyVerification !== expectedVerification
+            || !examination.prescriptionAllergyReviewedBy
+            || !examination.prescriptionAllergyReviewedAt) {
+            const error = new Error('Save the current allergy verification before dispensing.');
+            error.statusCode = 409;
+            throw error;
+          }
         }
         if (prices.length !== examination.prescriptions.length
           || prices.some((item, index) => !item || item.id !== String(examination.prescriptions[index]._id)
@@ -412,10 +520,6 @@ export const updatePrescriptionDispensing = async (req, res) => {
         const now = new Date();
         examination.prescriptionEvaluatedBy = String(req.user?.name || '').trim();
         examination.prescriptionEvaluatedAt = now;
-        if (status === 'Dispensed') {
-          examination.prescriptionAllergyReviewedBy = String(req.user?.name || '').trim();
-          examination.prescriptionAllergyReviewedAt = now;
-        }
         examination.prescriptionStatus = status;
         if (status === 'Dispensed' || status === 'Partially dispensed') {
           examination.prescriptionDispensedBy = String(req.user?.name || '').trim();
@@ -434,6 +538,7 @@ export const updatePrescriptionDispensing = async (req, res) => {
       details: `Pharmacy updated prescription ${savedVisit.visitId || savedVisit.patientId} to ${status}.`,
     });
     req.app.get('io')?.emit('clinic:prescription-updated', { visitId: String(savedVisit._id) });
+    if (status === 'Dispensed') req.app.get('io')?.emit('clinic:inventory-updated');
     return res.status(200).json({ success: true, message: `Prescription ${status.toLowerCase()}.`, data: savedVisit });
   } catch (error) {
     console.error('Failed to update pharmacy prescription:', error);

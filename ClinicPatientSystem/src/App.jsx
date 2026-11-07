@@ -32,6 +32,7 @@ import ReportsAndAnalytics from './components/ClinicStudentHead/ReportsAndAnalyt
 import ClinicHeadSettings from './components/ClinicStudentHead/ClinicHeadSettings.jsx';
 import DepartmentPurchaseRequests from './components/ClinicStudentHead/DepartmentPurchaseRequests.jsx';
 import { ClinicHeadChangePassword, ClinicHeadProfile } from './components/ClinicStudentHead/ClinicHeadAccount.jsx';
+import StaffAnnouncements from './components/ClinicStudentHead/StaffAnnouncements.jsx';
 import { CardRoomDashboard, CardRoomLayout, CardRoomUnavailable } from './components/Card Room/CardRoomModule.jsx';
 import RegisterNewPatient, { CardRoomVisitRegistration } from './components/Card Room/RegisterNewPatient.jsx';
 import CardRoomPatients from './components/Card Room/CardRoomPatients.jsx';
@@ -46,6 +47,8 @@ import DispensaryDashboard from './components/Dispensary Room/Dispensary Dashboa
 import DispensaryInventory from './components/Dispensary Room/DispensaryInventory.jsx';
 import PrescriptionsDispensing from './components/Dispensary Room/Prescriptions & Dispensing.jsx';
 import StoreRequisition from './components/Dispensary Room/StoreRequisition.jsx';
+import { DispensaryChangePassword, DispensaryProfile, DispensarySettings } from './components/Dispensary Room/DispensaryAccount.jsx';
+import MyAttendance from './components/Dispensary Room/MyAttendance.jsx';
 import ExaminationRoom from './page/Examination Room.jsx';
 
 function DispensaryLayout() {
@@ -156,6 +159,7 @@ function App() {
         <Route path="/appointments" element={<><Navbar /><AppointmentSection /><Footer /></>} />
         <Route path="/login" element={<div className="flex min-h-screen flex-col"><Navbar /><LoginPage /><Footer /></div>} />
         <Route path="/purchase-requests" element={<DepartmentPurchaseRequests />} />
+        <Route path="/announcements" element={<StaffAnnouncements />} />
         <Route path="/change-password" element={<div className="flex min-h-screen flex-col"><Navbar /><ForcePasswordChange /><Footer /></div>} />
         <Route path="/examination-room" element={<ExaminationRoom />} />
         <Route path="/admin" element={<AdminLayout />}>
@@ -180,6 +184,7 @@ function App() {
           <Route path="inventory" element={<PharmacyAndInventory />} />
           <Route path="store-requisitions" element={<StoreRequisition />} />
           <Route path="reports" element={<ReportsAndAnalytics />} />
+          <Route path="announcements" element={<StaffAnnouncements />} />
           <Route path="settings" element={<ClinicHeadSettings />} />
           <Route path="profile" element={<ClinicHeadProfile />} />
           <Route path="change-password" element={<ClinicHeadChangePassword />} />
@@ -198,6 +203,10 @@ function App() {
         </Route>
         <Route path="/dispensary" element={<DispensaryLayout />}>
           <Route index element={<DispensaryDashboard />} />
+          <Route path="profile" element={<DispensaryProfile />} />
+          <Route path="change-password" element={<DispensaryChangePassword />} />
+          <Route path="settings" element={<DispensarySettings />} />
+          <Route path="attendance" element={<MyAttendance />} />
           <Route path="*" element={<DispensarySection />} />
         </Route>
       </Routes>

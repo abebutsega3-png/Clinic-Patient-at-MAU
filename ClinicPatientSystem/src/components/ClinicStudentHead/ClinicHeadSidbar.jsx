@@ -9,6 +9,7 @@ import {
   BarChart3,
   Settings,
   ClipboardList,
+  Megaphone,
 } from 'lucide-react';
 
 const ClinicHeadSidebar = ({ isOpen = true, onNavigate }) => {
@@ -20,6 +21,7 @@ const ClinicHeadSidebar = ({ isOpen = true, onNavigate }) => {
     { label: 'Pharmacy & Inventory Control', path: '/clinic-head/inventory', icon: Pill },
     { label: 'Store Requisitions', path: '/clinic-head/store-requisitions', icon: ClipboardList },
     { label: 'Reports & Analytics', path: '/clinic-head/reports', icon: BarChart3 },
+    { label: 'Announcements', path: '/clinic-head/announcements', icon: Megaphone },
     { label: 'Settings', path: '/clinic-head/settings', icon: Settings },
   ];
 

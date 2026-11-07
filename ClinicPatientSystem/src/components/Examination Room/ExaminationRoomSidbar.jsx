@@ -9,7 +9,8 @@ import {
   BarChart3,
   User,
   LogOut,
-  ChevronDown
+  ChevronDown,
+  Megaphone
 } from 'lucide-react';
 
 export default function Sidebar({ activeItem, setActiveItem, isOpen = false, queueCount = 0, labRequestsCount = 0 }) {
@@ -22,6 +23,7 @@ export default function Sidebar({ activeItem, setActiveItem, isOpen = false, que
     { name: 'Patient Records / History', icon: FileText },
     { name: 'Referrals', icon: Share2 },
     { name: 'Reports', icon: BarChart3 },
+    { name: 'Announcements', icon: Megaphone },
   ];
 
   return (

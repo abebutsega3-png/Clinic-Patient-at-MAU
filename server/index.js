@@ -10,6 +10,7 @@ import clinicHeadRoutes from './router/ClinicHeadRoutes.js';
 import clinicHeadApprovalRoutes from './router/clinicheadapprovalRoutes.js';
 import authRoutes from './router/AuthRoutes.js';
 import staffRosterRoutes from './router/staffrosterRoutes.js';
+import myAttendanceRoutes from './router/myAttendanceRoutes.js';
 import clinicHeadPharmacyRoutes from './router/clinicheadPharmacyRoutes.js';
 import clinicHeadReportRoutes from './router/clinicheadreportRoutes.js';
 import clinicHeadSettingsRoutes from './router/clinicheadSettingsRoutes.js';
@@ -24,6 +25,7 @@ import departmentRoutes from './router/departmentRoutes.js';
 import masterDataRoutes from './router/masterDataRoutes.js';
 import cardRoomRoutes from './router/cardRoomRoutes.js';
 import examinationRoutes from './router/examinationDashboaredRoutes.js';
+import staffAnnouncementRoutes from './router/staffAnnouncementRoutes.js';
 import { seedRolesAndPermissions } from './module/seedRolesAndPermissions.js';
 import { seedMasterDataDefaults } from './module/masterDataCatalog.js';
 import {
@@ -66,12 +68,14 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/master-data', masterDataRoutes);
 app.use('/api/approvals', clinicHeadApprovalRoutes);
 app.use('/api/roster', staffRosterRoutes);
+app.use('/api/attendance', myAttendanceRoutes);
 app.use('/api/pharmacy', clinicHeadPharmacyRoutes);
 app.use('/api/reports', clinicHeadReportRoutes);
 app.use('/api/clinic-head/settings', clinicHeadSettingsRoutes);
 app.use('/api/public/clinic', publicClinicRoutes);
 app.use('/api/card-room', cardRoomRoutes);
 app.use('/api/examination', examinationRoutes);
+app.use('/api/announcements', staffAnnouncementRoutes);
 
 // ----------------------------------------------------
 // 2. API Routes እዚህ ላይ መግባት አለባቸው!

@@ -4,6 +4,7 @@ import {
   ChevronRight,
   ClipboardList,
   LayoutDashboard,
+  Megaphone,
   Package,
   ReceiptText,
 } from 'lucide-react';
@@ -33,6 +34,12 @@ const navigationGroups = [
     label: 'Reports',
     icon: BarChart3,
     path: '/dispensary/reports/daily',
+  },
+  {
+    id: 'announcements',
+    label: 'Announcements',
+    icon: Megaphone,
+    path: '/announcements',
   },
 ];
 

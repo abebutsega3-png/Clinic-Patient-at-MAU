@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import {
   Activity,
   AlertTriangle,
@@ -103,6 +104,17 @@ const ClinicHeadDashboard = () => {
     void loadDashboard();
     return () => { active = false; };
   }, [token, refreshKey]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const socket = io({ auth: { token } });
+    const refreshAttendance = () => setRefreshKey((current) => current + 1);
+    socket.on('staff-attendance-updated', refreshAttendance);
+    return () => {
+      socket.off('staff-attendance-updated', refreshAttendance);
+      socket.disconnect();
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
