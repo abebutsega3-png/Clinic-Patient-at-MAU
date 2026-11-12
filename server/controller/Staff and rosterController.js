@@ -7,6 +7,7 @@ import User from '../module/User.js';
 import Department from '../module/Department.js';
 import RolePermission from '../module/RolePermission.js';
 import ClinicOperationalSettings from '../module/ClinicOperationalSettings.js';
+import ApprovalRequest from '../module/ClinicheadApproval.js';
 import { notifyClinicHeads } from '../utils/clinicHeadAlert.js';
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -24,6 +25,22 @@ const getClinicDate = () => {
   }).formatToParts(new Date());
   const dateParts = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
   return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+};
+const getClockMinutes = (value) => {
+  if (typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+    const [hour, minute] = value.split(':').map(Number);
+    return hour * 60 + minute;
+  }
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Addis_Ababa',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date).map(({ type, value: part }) => [type, part]));
+  return Number(parts.hour) * 60 + Number(parts.minute);
 };
 
 const getActiveStaffRoles = async () => {
@@ -328,10 +345,18 @@ export const getTodayAttendance = async (req, res) => {
       || parsedDate.toISOString().slice(0, 10) !== date) {
       return res.status(400).json({ success: false, message: 'Choose a valid attendance date.' });
     }
+    const historyStartDate = new Date(parsedDate);
+    historyStartDate.setUTCDate(historyStartDate.getUTCDate() - 4);
+    const historyStart = historyStartDate.toISOString().slice(0, 10);
     const staffMembers = (await findStaffMembers({ department, role, search }))
       .filter((staff) => staff.status !== 'Inactive');
     const staffIds = staffMembers.map((staff) => staff._id);
-    const [attendanceEntries, leaveEntries, rosterEntries, roles, departments, operationalSettings] = await Promise.all([
+    const leaveApprovalFilter = {
+      requestType: { $in: ['leave_request', 'staff_leave'] },
+      applicantRole: 'staff',
+      ...(department && department !== 'All' ? { department } : {})
+    };
+    const [attendanceEntries, leaveEntries, rosterEntries, roles, departments, operationalSettings, attendanceHistory, leaveHistory, leaveRequests, leaveApprovalCounts] = await Promise.all([
       StaffAttendance.find({ staffId: { $in: staffIds }, date }).lean(),
       Roster.find({ staffId: { $in: staffIds }, date, shift: 'leave' }).lean(),
       Roster.find({ staffId: { $in: staffIds }, date }).lean(),
@@ -339,7 +364,35 @@ export const getTodayAttendance = async (req, res) => {
       Department.find({
         $or: [{ status: 'Active' }, { status: { $exists: false } }]
       }).select('name').sort({ name: 1 }).lean(),
-      ClinicOperationalSettings.findOne({ key: 'clinic' }).select('workingHours.days').lean()
+      ClinicOperationalSettings.findOne({ key: 'clinic' })
+        .select('workingHours.days rosterRules.shiftTimes')
+        .lean(),
+      StaffAttendance.aggregate([
+        { $match: { staffId: { $in: staffIds }, date: { $gte: historyStart, $lte: date } } },
+        { $group: { _id: { date: '$date', status: '$status' }, count: { $sum: 1 } } },
+        { $sort: { '_id.date': -1 } },
+        {
+          $group: {
+            _id: '$_id.date',
+            statuses: { $push: { status: '$_id.status', count: '$count' } }
+          }
+        },
+        { $sort: { _id: -1 } },
+        { $limit: 5 }
+      ]),
+      Roster.aggregate([
+        { $match: { staffId: { $in: staffIds }, date: { $gte: historyStart, $lte: date }, shift: 'leave' } },
+        { $group: { _id: '$date', count: { $sum: 1 } } }
+      ]),
+      ApprovalRequest.find(leaveApprovalFilter)
+        .select('applicantName department leave.leaveType leave.startDate leave.endDate leave.totalDays status createdAt')
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean(),
+      ApprovalRequest.aggregate([
+        { $match: leaveApprovalFilter },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
+      ])
     ]);
     const attendanceByStaff = new Map(attendanceEntries.map((entry) => [String(entry.staffId), entry]));
     const leaveStaffIds = new Set(leaveEntries.map((entry) => String(entry.staffId)));
@@ -385,11 +438,76 @@ export const getTodayAttendance = async (req, res) => {
         replacementName: replacement?.name || ''
       };
     }).filter((staff) => !status || status === 'All' || staff.attendanceStatus === status);
+    const earlyLeaveRecords = records.filter((staff) => {
+      if (!staff.isScheduled || (!staff.timeOut && !staff.checkOutTime)) return false;
+      const roster = rosterByStaff.get(String(staff._id));
+      const shiftEnd = operationalSettings?.rosterRules?.shiftTimes?.[roster?.shift]?.end
+        || clinicDay?.close
+        || '';
+      const expectedEnd = getClockMinutes(shiftEnd);
+      let actualEnd = getClockMinutes(staff.timeOut || staff.checkOutTime);
+      if (expectedEnd == null || actualEnd == null) return false;
+      if (roster?.shift === 'night' && actualEnd < 12 * 60) actualEnd += 24 * 60;
+      const normalizedExpectedEnd = roster?.shift === 'night' && expectedEnd < 12 * 60
+        ? expectedEnd + 24 * 60
+        : expectedEnd;
+      return actualEnd < normalizedExpectedEnd;
+    }).map((staff) => ({
+      staffId: String(staff._id),
+      name: staff.name,
+      department: staff.department || '',
+      time: staff.timeOut || staff.checkOutTime
+    }));
+    const leaveCountsByDate = new Map(leaveHistory.map((entry) => [entry._id, entry.count]));
+    const attendanceHistoryByDate = new Map(attendanceHistory.map((entry) => [entry._id, entry]));
+    const historyDates = [...new Set([
+      ...attendanceHistory.map((entry) => entry._id),
+      ...leaveHistory.map((entry) => entry._id)
+    ])].sort((left, right) => right.localeCompare(left)).slice(0, 5);
+    const history = historyDates.map((historyDate) => {
+      const attendanceEntry = attendanceHistoryByDate.get(historyDate);
+      const counts = Object.fromEntries((attendanceEntry?.statuses || [])
+        .map(({ status: entryStatus, count }) => [entryStatus, count]));
+      return {
+        date: historyDate,
+        present: counts.present || 0,
+        absent: counts.absent || 0,
+        late: counts.late || 0,
+        onLeave: leaveCountsByDate.get(historyDate) || 0,
+        recorded: (attendanceEntry?.statuses || []).reduce((total, item) => total + item.count, 0)
+      };
+    });
+    const leaveApprovalSummary = Object.fromEntries(leaveApprovalCounts.map(({ _id, count }) => [_id, count]));
+    const correctionRecords = records
+      .filter((staff) => staff.isScheduled && staff.attendanceStatus === 'unrecorded')
+      .slice(0, 10)
+      .map((staff) => ({ staffId: String(staff._id), name: staff.name, department: staff.department || '' }));
 
     return res.status(200).json({
       success: true,
       date,
       data: records,
+      history,
+      leaveRequests: leaveRequests.map((request) => ({
+        id: String(request._id),
+        staffName: request.applicantName,
+        department: request.department || '',
+        leaveType: request.leave?.leaveType || '',
+        startDate: request.leave?.startDate || null,
+        endDate: request.leave?.endDate || null,
+        totalDays: request.leave?.totalDays || 0,
+        status: request.status,
+        createdAt: request.createdAt
+      })),
+      leaveApprovalSummary: {
+        pending: leaveApprovalSummary.pending || 0,
+        approved: leaveApprovalSummary.approved || 0,
+        rejected: leaveApprovalSummary.rejected || 0,
+        returned: leaveApprovalSummary.returned || 0,
+        total: Object.values(leaveApprovalSummary).reduce((total, count) => total + count, 0)
+      },
+      earlyLeaveRecords,
+      correctionRecords,
       roles: roles
         .filter((item) => normalizeRoleName(item.roleName) !== 'student')
         .map(({ roleName, displayName }) => ({ value: roleName, label: displayName || roleName })),

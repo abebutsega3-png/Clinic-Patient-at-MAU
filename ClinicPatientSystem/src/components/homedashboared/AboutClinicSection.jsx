@@ -1,168 +1,171 @@
 import {
   BadgeCheck,
+  Bandage,
   Building2,
   ClipboardPlus,
   FlaskConical,
-  HeartHandshake,
   HeartPulse,
-  LockKeyhole,
-  PackageSearch,
   Pill,
+  ShieldCheck,
   Stethoscope,
-  Syringe,
   Target,
-  Zap,
+  UsersRound,
 } from 'lucide-react';
 import campusImage from '../../assets/image1.png';
 
-const coreValues = [
-  { label: 'Compassion', icon: HeartHandshake },
-  { label: 'Confidentiality', icon: LockKeyhole },
-  { label: 'Timeliness', icon: Zap },
-  { label: 'Quality', icon: BadgeCheck },
+const informationColumns = [
+  [
+    {
+      title: 'Who We Are',
+      description: 'The Mekdela Amba University (MAU) Clinic System is a university health service established to provide comprehensive, affordable, and quality healthcare services to students, academic staff, and other university community members.',
+      icon: UsersRound,
+    },
+    {
+      title: 'Purpose of the System',
+      description: 'The purpose of the MAU Clinic System is to ensure accessible, timely, and quality healthcare services, promote a healthy campus environment, and support the academic and personal success of our community.',
+      icon: Target,
+    },
+    {
+      title: 'Our Vision',
+      description: 'To be a leading university clinic system in Ethiopia, providing trusted care through compassion, quality, and innovation.',
+      icon: HeartPulse,
+    },
+  ],
+  [
+    {
+      title: 'About the System',
+      description: 'The MAU Clinic System is a modern, well-equipped healthcare facility within the university, designed to support the physical and mental well-being of students and staff through integrated clinical services, preventive care, and health education.',
+      icon: Building2,
+    },
+    {
+      title: 'Our Mission',
+      description: 'To deliver responsive, high-quality, and compassionate healthcare services, promote preventive health, and contribute to the well-being and success of students, staff, and the wider university community.',
+      icon: ShieldCheck,
+    },
+    {
+      title: 'Who Can Use the System',
+      description: 'The system is open to all Mekdela Amba University students, academic and non-academic staff, and eligible visitors on campus.',
+      icon: UsersRound,
+    },
+  ],
 ];
 
-const clinicUnits = [
-  {
-    name: 'Card Room',
-    description: 'Registers patients and opens or retrieves patient cards.',
-    icon: ClipboardPlus,
-  },
-  {
-    name: 'Examination Room',
-    description: 'Doctors examine patients and decide on treatment.',
-    icon: Stethoscope,
-  },
-  {
-    name: 'Laboratory Room',
-    description: 'Provides blood, urine, and other laboratory tests.',
-    icon: FlaskConical,
-  },
-  {
-    name: 'Injection & Dressing Room',
-    description: 'Provides injections and wound dressing care.',
-    icon: Syringe,
-  },
-  {
-    name: 'Dispensary Room',
-    description: 'Dispenses prescribed medicines to patients.',
-    icon: Pill,
-  },
-  {
-    name: 'Drug Store',
-    description: 'Stores medicines and monitors medicine stock.',
-    icon: PackageSearch,
-  },
-  {
-    name: 'Emergency Room',
-    description: 'Provides urgent care for emergency cases.',
-    icon: HeartPulse,
-    emergency: true,
-  },
-  {
-    name: 'Clinic Student Head Office',
-    description: 'Coordinates and oversees the clinic’s overall operations.',
-    icon: Building2,
-  },
+const clinicServices = [
+  { title: 'Examination Room', icon: Stethoscope },
+  { title: 'Emergency Room', icon: HeartPulse },
+  { title: 'Laboratory Room', icon: FlaskConical },
+  { title: 'Injection and Dressing Room', icon: Bandage },
+  { title: 'Pharmacy / Drug Store', icon: Pill },
+  { title: 'Dispensary Room', icon: ClipboardPlus },
+  { title: 'Care Room', icon: HeartPulse },
+  { title: 'Clinic Head Office', icon: Building2 },
 ];
+
+const benefits = [
+  'Easy access to quality healthcare services',
+  'Timely and professional medical support',
+  'Reduced waiting time with organized service flow',
+  'Supports academic performance and well-being',
+];
+
+function InformationCard({ title, description, icon: Icon }) {
+  return (
+    <article className="flex gap-3">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+        <Icon size={18} aria-hidden="true" />
+      </span>
+      <div>
+        <h2 className="font-serif text-sm font-bold text-[#102f5e]">{title}</h2>
+        <p className="mt-1 text-xs leading-5 text-slate-600">{description}</p>
+      </div>
+    </article>
+  );
+}
 
 export default function AboutClinicSection() {
   return (
-    <section id="about" className="scroll-mt-32 bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-12">
-          <div className="overflow-hidden rounded-2xl shadow-md">
-            <img
-              src={campusImage}
-              alt="Mekdela Amba University campus"
-              className="h-64 w-full object-cover sm:h-80 lg:h-[26rem]"
-              loading="lazy"
-            />
-          </div>
+    <>
+      <section
+        aria-labelledby="about-title"
+        className="relative isolate flex min-h-44 items-center overflow-hidden bg-[#102f5e] px-4 py-8 sm:min-h-52 sm:px-6 lg:px-8"
+      >
+        <img
+          src={campusImage}
+          alt=""
+          className="absolute inset-0 z-0 h-full w-full object-cover object-center"
+        />
+        <div className="absolute inset-0 z-10 bg-gradient-to-r from-[#102f5e]/95 via-[#102f5e]/75 to-[#102f5e]/25" />
+        <div className="relative z-20 mx-auto w-full max-w-7xl text-white">
+          <p className="inline-flex rounded-full bg-white/20 px-3 py-1 text-[10px] font-bold uppercase tracking-wider">
+            Mekdela Amba University
+          </p>
+          <h1 id="about-title" className="mt-2 font-serif text-2xl font-bold sm:text-3xl">
+            About MAU Clinic System
+          </h1>
+          <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-100 sm:text-sm">
+            Committed to providing accessible, quality and student-centered healthcare services
+            for a healthier university community.
+          </p>
+        </div>
+      </section>
 
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-sky-600">About the Clinic</p>
-            <h2 className="mt-2 text-2xl font-bold tracking-tight text-[#102f5e] sm:text-3xl">
-              Care for the university community
-            </h2>
-            <p className="mt-4 leading-7 text-slate-600">
-              MAU Clinic provides essential healthcare for the university’s students, faculty, and staff.
-              We help patients move through registration, assessment, and treatment in an organized,
-              timely way.
-            </p>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <article className="rounded-xl border border-slate-200 bg-white p-4">
-                <span className="inline-flex items-center gap-2 font-semibold text-[#102f5e]">
-                  <HeartPulse size={19} className="text-sky-600" aria-hidden="true" />
-                  Our Mission
-                </span>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Provide quality, timely, and accessible healthcare.
-                </p>
-              </article>
-              <article className="rounded-xl border border-slate-200 bg-white p-4">
-                <span className="inline-flex items-center gap-2 font-semibold text-[#102f5e]">
-                  <Target size={19} className="text-sky-600" aria-hidden="true" />
-                  Our Vision
-                </span>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Become a trusted, modern clinic for the university community.
-                </p>
-              </article>
+      <section id="about" className="scroll-mt-32 bg-white px-4 py-7 sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-7 md:grid-cols-2 lg:grid-cols-3 lg:gap-6">
+          {informationColumns.map((column, index) => (
+            <div key={index} className="space-y-6">
+              {column.map((item) => (
+                <InformationCard key={item.title} {...item} />
+              ))}
             </div>
+          ))}
 
-            <div className="mt-5">
-              <h3 className="text-sm font-bold text-[#102f5e]">Our Core Values</h3>
-              <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-3">
-                {coreValues.map(({ label, icon: Icon }) => (
-                  <li key={label} className="inline-flex items-center gap-2 text-sm text-slate-600">
-                    <Icon size={17} className="text-sky-600" aria-hidden="true" />
-                    {label}
+          <div className="space-y-6">
+            <section aria-labelledby="about-services-title">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+                  <HeartPulse size={18} aria-hidden="true" />
+                </span>
+                <div>
+                  <h2 id="about-services-title" className="font-serif text-sm font-bold text-[#102f5e]">
+                    Our Services
+                  </h2>
+                  <p className="text-xs text-slate-600">We provide the following clinic services:</p>
+                </div>
+              </div>
+              <ul className="mt-3 grid grid-cols-2 gap-2">
+                {clinicServices.map(({ title, icon: Icon }) => (
+                  <li
+                    key={title}
+                    className="flex min-h-10 items-center gap-2 rounded-lg bg-blue-50 px-2.5 py-2 text-[11px] font-medium leading-4 text-slate-700"
+                  >
+                    <Icon size={16} className="shrink-0 text-sky-600" aria-hidden="true" />
+                    {title}
                   </li>
                 ))}
               </ul>
-            </div>
-          </div>
-        </div>
+            </section>
 
-        <div className="mt-12">
-          <div className="text-center">
-            <p className="text-xs font-bold uppercase tracking-wider text-sky-600">Patient Flow</p>
-            <h3 className="mt-2 text-2xl font-bold tracking-tight text-[#102f5e] sm:text-3xl">Our Units</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              The clinic units support patients from registration through treatment and follow-up.
-            </p>
-          </div>
-
-          <ul className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {clinicUnits.map(({ name, description, icon: Icon, emergency }) => (
-              <li
-                key={name}
-                className={`group min-h-40 rounded-xl border bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-md ${
-                  emergency
-                    ? 'border-red-200 hover:border-red-400'
-                    : 'border-slate-200 hover:border-sky-300'
-                }`}
-              >
-                <span
-                  className={`inline-flex h-11 w-11 items-center justify-center rounded-full ${
-                    emergency
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-sky-100 text-sky-700 group-hover:bg-sky-500 group-hover:text-white'
-                  }`}
-                >
-                  <Icon size={22} aria-hidden="true" />
+            <section aria-labelledby="about-benefits-title">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+                  <BadgeCheck size={18} aria-hidden="true" />
                 </span>
-                <h4 className={`mt-3 font-bold ${emergency ? 'text-red-800' : 'text-[#102f5e]'}`}>
-                  {name}
-                </h4>
-                <p className="mt-1 text-sm leading-5 text-slate-600">{description}</p>
-              </li>
-            ))}
-          </ul>
+                <h2 id="about-benefits-title" className="font-serif text-sm font-bold text-[#102f5e]">
+                  Benefits of the System
+                </h2>
+              </div>
+              <ul className="mt-2 space-y-1 pl-12">
+                {benefits.map((benefit) => (
+                  <li key={benefit} className="flex items-start gap-1.5 text-[11px] leading-4 text-slate-600">
+                    <BadgeCheck size={13} className="mt-0.5 shrink-0 text-blue-600" aria-hidden="true" />
+                    {benefit}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </>
   );
 }

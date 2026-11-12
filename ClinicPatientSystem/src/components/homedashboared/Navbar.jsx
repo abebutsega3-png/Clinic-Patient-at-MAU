@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LogIn, Mail, Menu, Phone, ShieldPlus, X } from 'lucide-react';
+import { ChevronDown, Mail, Menu, Phone, ShieldPlus, UserRound, X } from 'lucide-react';
 import { FaFacebookF, FaXTwitter } from 'react-icons/fa6';
 
-const navigation = [
-  { label: 'Home', href: '/' },
-  { label: 'About Us', href: '/about' },
-  { label: 'Services', href: '/services' },
-  { label: 'Working Hours', href: '/working-hours' },
-  { label: 'Contact Us', href: '/contact' },
+const departments = [
+  { label: 'Drug Store', id: 'department-drug-store' },
+  { label: 'Emergency Room', id: 'department-emergency-room' },
+  { label: 'Injection and Dressing Room', id: 'department-injection-and-dressing-room' },
+  { label: 'Examination Room', id: 'department-examination-room' },
+  { label: 'Dispensary Room', id: 'department-dispensary-room' },
+  { label: 'Card Room', id: 'department-card-room' },
+  { label: 'Laboratory Room', id: 'department-laboratory-room' },
 ];
 
 const socialLinks = [
@@ -27,6 +29,7 @@ const socialLinks = [
 export default function Navbar() {
   const { pathname, hash } = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [departmentsOpen, setDepartmentsOpen] = useState(false);
   const [activeSection, setActiveSection] = useState(hash.slice(1));
 
   useEffect(() => {
@@ -38,7 +41,7 @@ export default function Navbar() {
 
       const headerHeight = document.querySelector('header')?.offsetHeight || 0;
       const activationLine = window.scrollY + headerHeight + 24;
-      const sections = ['services', 'how-it-works', 'working-hours', 'contact']
+      const sections = ['services', 'how-it-works']
         .map((id) => document.getElementById(id))
         .filter(Boolean);
       const currentSection = sections
@@ -60,10 +63,9 @@ export default function Navbar() {
   const isActive = (href) => {
     if (href === '/') return pathname === '/' && !activeSection;
     if (href === '/about') return pathname === '/about';
-    if (href === '/services') return pathname === '/services' || (pathname === '/' && activeSection === 'services');
-    if (href === '/working-hours') return pathname === '/working-hours' || (pathname === '/' && activeSection === 'working-hours');
-    if (href === '/contact') return pathname === '/contact' || (pathname === '/' && activeSection === 'contact');
-    return pathname === '/' && activeSection === href.slice(2);
+    if (href === '/#services') return pathname === '/' && activeSection === 'services';
+    if (href === '/#how-it-works') return pathname === '/' && activeSection === 'how-it-works';
+    return false;
   };
 
   return (
@@ -81,9 +83,9 @@ export default function Navbar() {
             </a>
           </div>
           <div className="ml-auto flex items-center gap-4">
-            <Link to="/login" className="inline-flex items-center gap-1.5 hover:text-sky-100">
-              <LogIn size={13} aria-hidden="true" />
-              Login
+            <Link to="/login" className="inline-flex items-center gap-1.5 whitespace-nowrap hover:text-sky-100">
+              <UserRound size={15} aria-hidden="true" />
+              <span>Staff Login</span>
             </Link>
             <div className="hidden items-center gap-3 sm:flex">
               {socialLinks.map(({ label, href, icon: Icon }) => (
@@ -122,31 +124,69 @@ export default function Navbar() {
           </Link>
 
           <nav aria-label="Main navigation" className="hidden items-center gap-4 lg:flex xl:gap-6">
-            {navigation.map(({ label, href }) => (
-              href.startsWith('/') && !href.startsWith('/#') ? (
-                <Link
-                  key={href}
-                  to={href}
-                  aria-current={isActive(href) ? 'page' : undefined}
-                  className={`border-b-2 px-0.5 py-2 text-sm transition-colors hover:border-blue-600 hover:text-blue-700 ${
-                    isActive(href) ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-700'
-                  }`}
-                >
-                  {label}
-                </Link>
-              ) : (
-                <a
-                  key={href}
-                  href={href}
-                  aria-current={isActive(href) ? 'page' : undefined}
-                  className={`border-b-2 px-0.5 py-2 text-sm transition-colors hover:border-blue-600 hover:text-blue-700 ${
-                    isActive(href) ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-700'
-                  }`}
-                >
-                  {label}
-                </a>
-              )
-            ))}
+            <Link
+              to="/"
+              aria-current={isActive('/') ? 'page' : undefined}
+              className={`border-b-2 px-0.5 py-2 text-sm transition-colors hover:border-blue-600 hover:text-blue-700 ${
+                isActive('/') ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-700'
+              }`}
+            >
+              Home
+            </Link>
+            <Link
+              to="/about"
+              aria-current={isActive('/about') ? 'page' : undefined}
+              className={`border-b-2 px-0.5 py-2 text-sm transition-colors hover:border-blue-600 hover:text-blue-700 ${
+                isActive('/about') ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-700'
+              }`}
+            >
+              About Us
+            </Link>
+            <div className="relative">
+              <button
+                type="button"
+                aria-expanded={departmentsOpen}
+                onClick={() => setDepartmentsOpen((open) => !open)}
+                className={`inline-flex items-center gap-1 border-b-2 px-0.5 py-2 text-sm transition-colors hover:border-blue-600 hover:text-blue-700 ${
+                  isActive('/#services') ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-700'
+                }`}
+              >
+                Departments
+                <ChevronDown size={15} aria-hidden="true" />
+              </button>
+              {departmentsOpen && (
+                <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+                  {departments.map(({ label, id }) => (
+                    <a
+                      key={id}
+                      href={`/#${id}`}
+                      onClick={() => setDepartmentsOpen(false)}
+                      className="block rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700"
+                    >
+                      {label}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+            <a
+              href="/#services"
+              aria-current={isActive('/#services') ? 'location' : undefined}
+              className={`border-b-2 px-0.5 py-2 text-sm transition-colors hover:border-blue-600 hover:text-blue-700 ${
+                isActive('/#services') ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-700'
+              }`}
+            >
+              Queue Status
+            </a>
+            <a
+              href="/#how-it-works"
+              aria-current={isActive('/#how-it-works') ? 'location' : undefined}
+              className={`border-b-2 px-0.5 py-2 text-sm transition-colors hover:border-blue-600 hover:text-blue-700 ${
+                isActive('/#how-it-works') ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-700'
+              }`}
+            >
+              Patient Flow
+            </a>
           </nav>
 
           <button
@@ -164,33 +204,60 @@ export default function Navbar() {
               aria-label="Mobile navigation"
               className="absolute left-0 right-0 top-full flex flex-col border-t border-blue-100 bg-white px-4 py-3 shadow-lg lg:hidden"
             >
-              {navigation.map(({ label, href }) => (
-                href.startsWith('/') && !href.startsWith('/#') ? (
-                  <Link
-                    key={href}
-                    to={href}
-                    aria-current={isActive(href) ? 'page' : undefined}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-blue-50 hover:text-blue-700 ${
-                      isActive(href) ? 'text-blue-700' : 'text-slate-700'
-                    }`}
-                  >
-                    {label}
-                  </Link>
-                ) : (
-                  <a
-                    key={href}
-                    href={href}
-                    aria-current={isActive(href) ? 'page' : undefined}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-blue-50 hover:text-blue-700 ${
-                      isActive(href) ? 'text-blue-700' : 'text-slate-700'
-                    }`}
-                  >
-                    {label}
-                  </a>
-                )
-              ))}
+              <Link
+                to="/"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-blue-50 hover:text-blue-700 ${isActive('/') ? 'text-blue-700' : 'text-slate-700'}`}
+              >
+                Home
+              </Link>
+              <Link
+                to="/about"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-blue-50 hover:text-blue-700 ${isActive('/about') ? 'text-blue-700' : 'text-slate-700'}`}
+              >
+                About Us
+              </Link>
+              <button
+                type="button"
+                aria-expanded={departmentsOpen}
+                onClick={() => setDepartmentsOpen((open) => !open)}
+                className="flex items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+              >
+                Departments
+                <ChevronDown size={16} aria-hidden="true" />
+              </button>
+              {departmentsOpen && (
+                <div className="ml-3 border-l border-blue-100 pl-2">
+                  {departments.map(({ label, id }) => (
+                    <a
+                      key={id}
+                      href={`/#${id}`}
+                      onClick={() => {
+                        setDepartmentsOpen(false);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="block rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-700"
+                    >
+                      {label}
+                    </a>
+                  ))}
+                </div>
+              )}
+              <a
+                href="/#services"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-blue-50 hover:text-blue-700 ${isActive('/#services') ? 'text-blue-700' : 'text-slate-700'}`}
+              >
+                Queue Status
+              </a>
+              <a
+                href="/#how-it-works"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-blue-50 hover:text-blue-700 ${isActive('/#how-it-works') ? 'text-blue-700' : 'text-slate-700'}`}
+              >
+                Patient Flow
+              </a>
             </nav>
           )}
         </div>

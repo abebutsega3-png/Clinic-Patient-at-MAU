@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Megaphone
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function Sidebar({ activeItem, setActiveItem, isOpen = false, queueCount = 0, labRequestsCount = 0 }) {
   const navMenuItems = [
@@ -95,6 +96,13 @@ export default function Sidebar({ activeItem, setActiveItem, isOpen = false, que
               </button>
             );
           })}
+          <Link
+            to="/department-reports"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium text-slate-300 hover:bg-[#162A45] hover:text-white"
+          >
+            <FileText className="w-4 h-4 text-slate-400" aria-hidden="true" />
+            <span className="truncate">Department Report</span>
+          </Link>
         </nav>
       </div>
 

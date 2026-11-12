@@ -3,6 +3,7 @@ import {
   BarChart3,
   ChevronRight,
   ClipboardList,
+  FileText,
   LayoutDashboard,
   Megaphone,
   Package,
@@ -34,6 +35,12 @@ const navigationGroups = [
     label: 'Reports',
     icon: BarChart3,
     path: '/dispensary/reports/daily',
+  },
+  {
+    id: 'department-report',
+    label: 'Department Report',
+    icon: FileText,
+    path: '/department-reports',
   },
   {
     id: 'announcements',

@@ -33,6 +33,9 @@ import ClinicHeadSettings from './components/ClinicStudentHead/ClinicHeadSetting
 import DepartmentPurchaseRequests from './components/ClinicStudentHead/DepartmentPurchaseRequests.jsx';
 import { ClinicHeadChangePassword, ClinicHeadProfile } from './components/ClinicStudentHead/ClinicHeadAccount.jsx';
 import StaffAnnouncements from './components/ClinicStudentHead/StaffAnnouncements.jsx';
+import ClinicHeadAttendance from './components/ClinicStudentHead/ClinicHeadAttendance.jsx';
+import ClinicHeadDepartmentReports from './components/ClinicStudentHead/ClinicHeadDepartmentReports.jsx';
+import DepartmentReportSubmission from './components/DepartmentReports/DepartmentReportSubmission.jsx';
 import { CardRoomDashboard, CardRoomLayout, CardRoomUnavailable } from './components/Card Room/CardRoomModule.jsx';
 import RegisterNewPatient, { CardRoomVisitRegistration } from './components/Card Room/RegisterNewPatient.jsx';
 import CardRoomPatients from './components/Card Room/CardRoomPatients.jsx';
@@ -160,6 +163,7 @@ function App() {
         <Route path="/login" element={<div className="flex min-h-screen flex-col"><Navbar /><LoginPage /><Footer /></div>} />
         <Route path="/purchase-requests" element={<DepartmentPurchaseRequests />} />
         <Route path="/announcements" element={<StaffAnnouncements />} />
+        <Route path="/department-reports" element={<DepartmentReportSubmission />} />
         <Route path="/change-password" element={<div className="flex min-h-screen flex-col"><Navbar /><ForcePasswordChange /><Footer /></div>} />
         <Route path="/examination-room" element={<ExaminationRoom />} />
         <Route path="/admin" element={<AdminLayout />}>
@@ -182,6 +186,8 @@ function App() {
           <Route path="approvals" element={<ApprovalsAndRequests />} />
           <Route path="staff" element={<DutyRoster />} />
           <Route path="inventory" element={<PharmacyAndInventory />} />
+          <Route path="attendance" element={<ClinicHeadAttendance />} />
+          <Route path="department-reports" element={<ClinicHeadDepartmentReports />} />
           <Route path="store-requisitions" element={<StoreRequisition />} />
           <Route path="reports" element={<ReportsAndAnalytics />} />
           <Route path="announcements" element={<StaffAnnouncements />} />

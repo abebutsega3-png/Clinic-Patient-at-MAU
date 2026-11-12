@@ -127,6 +127,7 @@ export const getClinicHeadDashboardData = async (req, res) => {
       pendingLeaveCount,
       todayTotalPatients,
       patientsInTreatment,
+      todayVisitStatusCounts,
       averageWaitResult,
       visitsByDepartment,
       attendanceStatusCounts,
@@ -169,6 +170,10 @@ export const getClinicHeadDashboardData = async (req, res) => {
         visitDate: { $gte: todayStart, $lt: tomorrowStart },
         status: { $in: ['Registered', 'Waiting', 'Called', 'In Service', 'Routed', 'Sent to Examination'] }
       }),
+      ClinicVisit.aggregate([
+        { $match: { visitDate: { $gte: todayStart, $lt: tomorrowStart } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
+      ]),
       ClinicVisit.aggregate([
         { $match: { visitDate: { $gte: todayStart, $lt: tomorrowStart }, waitTimeMinutes: { $type: 'number' } } },
         { $group: { _id: null, average: { $avg: '$waitTimeMinutes' } } }
@@ -400,6 +405,7 @@ export const getClinicHeadDashboardData = async (req, res) => {
         criticalStockItems: lowStockItems.length
       },
       pendingApprovalsList: approvals.slice(0, 8),
+      visitStatusCounts: Object.fromEntries(todayVisitStatusCounts.map(({ _id, count }) => [_id, count])),
       patientFlow,
       monthWeekFlow,
       previousMonthWeekFlow,
