@@ -1,14 +1,41 @@
 import mongoose from 'mongoose';
 import { Queue } from '../module/AdminDashboardModels.js';
+import ClinicInventory from '../module/ClinicInventory.js';
 import ClinicVisit from '../module/ClinicVisit.js';
 import Department from '../module/Department.js';
 import Patient from '../module/Patient.js';
+import QueueCounter from '../module/QueueCounter.js';
 import { writeAuditEvent } from '../utils/auditLogger.js';
 
 const clinicTimeZone = 'Africa/Addis_Ababa';
 const activeQueueStatuses = ['sent_to_examination', 'in_progress'];
 const priorityOrder = { Emergency: 0, Urgent: 1, Normal: 2 };
 const trimString = (value, limit = 500) => (typeof value === 'string' ? value.trim().slice(0, limit) : '');
+const choice = (value, values) => values.includes(value) ? value : '';
+const validateOpdFields = (opd = {}) => {
+  if (opd === null || opd === undefined) return '';
+  if (typeof opd !== 'object' || Array.isArray(opd)) {
+    return 'OPD register fields must be provided as an object.';
+  }
+  const choices = [
+    ['rtaType', ['None', '1. Pedestrian', '2. Motorcyclist', '3. Vehicle occupant'], 'Select a valid road traffic accident type.'],
+    ['hivTargetCode', ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'], 'Select a valid HIV target population category.'],
+    ['hivTestResult', ['N/A', 'P', 'N'], 'Select a valid HIV test result.'],
+    ['tbScreeningResult', ['N/A', 'P', 'N'], 'Select a valid TB screening result.'],
+    ['tbDiagnosticCode', ['1', '2', '3', '4', '5', '6'], 'Select a valid TB diagnostic code.'],
+    ['tbResultCode', ['TB', 'No TB', 'ND'], 'Select a valid TB result code.'],
+    ['referredCode', ['1', '2', '3', '4', '5', '6', '7', '8', '9'], 'Select a valid referral code.'],
+  ];
+  for (const [field, values, message] of choices) {
+    if (opd[field] !== undefined && opd[field] !== '' && !values.includes(opd[field])) return message;
+  }
+  for (const field of ['roadTrafficAccident', 'hivTestOffered', 'hivTestPerformed', 'screenedForTb', 'tbScreened', 'died']) {
+    if (opd[field] !== undefined && typeof opd[field] !== 'boolean') {
+      return `The ${field} value must be true or false.`;
+    }
+  }
+  return '';
+};
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const cleanList = (value, fields, limit, maxEntries = 30) => (Array.isArray(value) ? value.slice(0, maxEntries).map((entry) => {
   if (typeof entry === 'string') return { [fields[0]]: trimString(entry, limit) };
@@ -16,7 +43,7 @@ const cleanList = (value, fields, limit, maxEntries = 30) => (Array.isArray(valu
   return Object.fromEntries(fields.map((field) => [field, trimString(entry[field], limit)]));
 }).filter((entry) => entry && Object.values(entry).some(Boolean)) : []);
 
-const getExaminationData = (body = {}) => {
+const getExaminationData = (body = {}, user = {}) => {
   const referral = body.referral || {};
   const opd = body.opd || {};
   return {
@@ -39,27 +66,43 @@ const getExaminationData = (body = {}) => {
       respiratoryRate: trimString(body.vitals?.respiratoryRate, 30),
       weight: trimString(body.vitals?.weight, 30),
     },
-    labRequests: cleanList(body.labRequests, ['testName', 'testCode', 'priority', 'clinicalNote'], 1000, 60)
-      .map((item) => ({ ...item, priority: item.priority === 'urgent' ? 'urgent' : 'normal', status: 'Pending' })),
+    labRequests: cleanList(body.labRequests, ['testName', 'testCode', 'category', 'priority', 'clinicalNote'], 1000, 60)
+      .map((item) => ({
+        ...item,
+        isRequested: true,
+        priority: item.priority === 'urgent' ? 'urgent' : 'normal',
+        status: 'Pending',
+      })),
     prescriptions: cleanList(body.prescriptions, [
       'medicine', 'strength', 'form', 'dose', 'dosage', 'frequency', 'duration', 'quantity', 'quantityUnit', 'instructions',
     ], 300),
     opd: {
-      roadTrafficAccident: Boolean(opd.roadTrafficAccident),
-      accidentType: trimString(opd.accidentType, 100),
+      roadTrafficAccident: Boolean(opd.roadTrafficAccident) || Boolean(opd.rtaType && opd.rtaType !== 'None'),
+      accidentType: trimString(opd.rtaType || opd.accidentType, 100),
+      rtaType: choice(opd.rtaType, ['None', '1. Pedestrian', '2. Motorcyclist', '3. Vehicle occupant']),
       hivTestOffered: Boolean(opd.hivTestOffered),
       hivTestPerformed: Boolean(opd.hivTestPerformed),
-      hivResult: trimString(opd.hivResult, 100),
-      targetPopulation: trimString(opd.targetPopulation, 200),
-      tbScreened: Boolean(opd.tbScreened),
-      tbResult: trimString(opd.tbResult, 200),
-      diagnosticEvaluation: trimString(opd.diagnosticEvaluation, 200),
-      referredTo: trimString(opd.referredTo, 200),
+      hivResult: trimString(opd.hivTestResult || opd.hivResult, 100),
+      targetPopulation: trimString(opd.hivTargetCode || opd.targetPopulation, 200),
+      hivTargetCode: choice(opd.hivTargetCode, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']),
+      hivTestResult: choice(opd.hivTestResult || opd.hivResult, ['N/A', 'P', 'N']),
+      tbScreened: Boolean(opd.screenedForTb || opd.tbScreened),
+      screenedForTb: Boolean(opd.screenedForTb || opd.tbScreened),
+      tbResult: trimString(opd.tbResultCode || opd.tbScreeningResult || opd.tbResult, 200),
+      tbScreeningResult: choice(opd.tbScreeningResult, ['N/A', 'P', 'N']),
+      tbDiagnosticCode: choice(opd.tbDiagnosticCode, ['1', '2', '3', '4', '5', '6']),
+      tbResultCode: choice(opd.tbResultCode, ['TB', 'No TB', 'ND']),
+      diagnosticEvaluation: trimString(opd.tbDiagnosticCode || opd.diagnosticEvaluation, 200),
+      referredTo: trimString(opd.referredCode || opd.referredTo, 200),
+      referredCode: choice(opd.referredCode, ['1', '2', '3', '4', '5', '6', '7', '8', '9']),
+      died: Boolean(opd.died),
     },
     referral: {
       department: trimString(referral.department, 120),
       reason: trimString(referral.reason, 1000),
-      qualification: trimString(referral.qualification, 120),
+      referredBy: trimString(referral.referredBy || user?.name, 120),
+      qualification: trimString(referral.qualification || user?.qualification, 120),
+      signature: trimString(referral.signature, 200),
       emergency: Boolean(referral.emergency),
       ambulanceDriver: trimString(referral.ambulanceDriver, 120),
       takeOffTime: trimString(referral.takeOffTime, 20),
@@ -90,7 +133,7 @@ const preserveLabResults = (existingRequests = [], requestedRequests = []) => {
   });
   return [...preserved, ...mergedRequests];
 };
-const preserveLabWorkflow = (visit, examinationData) => {
+const preserveLabWorkflow = (visit, examinationData, user) => {
   const previous = visit.examination || {};
   const previousRequests = previous.labRequests || [];
   const labRequests = preserveLabResults(previousRequests, examinationData.labRequests);
@@ -109,12 +152,18 @@ const preserveLabWorkflow = (visit, examinationData) => {
     labRequests,
     labRequestNumber: hasRequests ? requestNumber : '',
     labStatus: hasRequests ? (workflow.labStatus || 'Pending') : '',
+    labRequestedBy: hasRequests
+      ? (startNewBatch ? trimString(user?.name, 120) : workflow.labRequestedBy || trimString(user?.name, 120))
+      : '',
     labRequestedAt: hasRequests ? (workflow.labRequestedAt || new Date()) : null,
     labSampleCollectedAt: workflow.labSampleCollectedAt || null,
     labInProgressAt: workflow.labInProgressAt || null,
     labResultReadyAt: workflow.labResultReadyAt || null,
     labReviewedAt: workflow.labReviewedAt || null,
     labTestedBy: workflow.labTestedBy || '',
+    labTechnicianSignature: workflow.labTechnicianSignature || '',
+    labEnteredAt: workflow.labEnteredAt || null,
+    labTechnicianNotes: workflow.labTechnicianNotes || '',
     labDateOfReport: workflow.labDateOfReport || null,
     labApprovedBy: workflow.labApprovedBy || '',
     labApprovedAt: workflow.labApprovedAt || null,
@@ -123,6 +172,7 @@ const preserveLabWorkflow = (visit, examinationData) => {
 const preservePrescriptionWorkflow = (visit, examinationData, user) => {
   const previous = visit.examination || {};
   const existingPrescriptions = previous.prescriptions || [];
+  const previousPrescriber = previous.prescriber?.toObject?.() || previous.prescriber || {};
   const submittedPrescriptions = previous.prescriptionStatus
     && previous.prescriptionStatus !== 'Pending'
     ? existingPrescriptions.map((item) => item.toObject?.() || item)
@@ -147,7 +197,7 @@ const preservePrescriptionWorkflow = (visit, examinationData, user) => {
       qualification: trimString(user?.qualification, 120),
       registration: trimString(user?.registrationNo || user?.registration || user?.licenseNumber, 120),
       signedAt: new Date(),
-    } : previous.prescriber || {},
+    } : previousPrescriber,
     prescriptionEvaluatedBy: previous.prescriptionEvaluatedBy || '',
     prescriptionEvaluatedAt: previous.prescriptionEvaluatedAt || null,
     prescriptionDispensedBy: previous.prescriptionDispensedBy || '',
@@ -190,21 +240,27 @@ const getExaminationDepartment = async (req) => {
 const populateQueueVisits = (query) => query.populate({
   path: 'visitId',
   select: 'visitId patientRecordId patientId patientName visitDate visitType priority status diagnosis examination emergency referred',
-  populate: { path: 'patientRecordId', select: 'cardNumber fullName age sex universityIdNumber governmentIdNumber phoneNumber region town woreda kebele address' },
+  populate: { path: 'patientRecordId', select: 'cardNumber fullName age sex universityIdNumber academicDepartment governmentIdNumber phoneNumber region town woreda kebele address dormBlock allergies chronicConditions' },
 });
 
 const toQueueItem = (queue, now = Date.now()) => {
   const visit = queue.visitId && typeof queue.visitId === 'object' ? queue.visitId : null;
   const arrivedAt = queue.arrivedAt ? new Date(queue.arrivedAt).getTime() : now;
+  const waitFinishedAt = queue.inProgressAt || queue.completedAt || (queue.status === 'completed' ? queue.updatedAt : null);
+  const waitUntil = waitFinishedAt ? new Date(waitFinishedAt).getTime() : now;
   return {
     id: String(queue._id),
     visitId: visit?._id ? String(visit._id) : '',
+    visitDate: visit?.visitDate || queue.arrivedAt || null,
     queueNumber: queue.queueNumber || '',
     patientId: queue.patientId || visit?.patientId || '',
     name: queue.patientName || visit?.patientName || 'Patient',
     studentId: visit?.patientRecordId?.universityIdNumber || queue.patientId || visit?.patientId || '',
     cardNumber: visit?.patientRecordId?.cardNumber || '',
     patientRecordId: visit?.patientRecordId?._id ? String(visit.patientRecordId._id) : '',
+    age: visit?.patientRecordId?.age ?? '',
+    sex: visit?.patientRecordId?.sex || '',
+    academicDepartment: visit?.patientRecordId?.academicDepartment || '',
     telephone: visit?.patientRecordId?.phoneNumber || '',
     governmentIdNumber: visit?.patientRecordId?.governmentIdNumber || '',
     region: visit?.patientRecordId?.region || '',
@@ -216,12 +272,13 @@ const toQueueItem = (queue, now = Date.now()) => {
     age: visit?.patientRecordId?.age ?? null,
     sex: visit?.patientRecordId?.sex || '',
     visitType: visit?.visitType || queue.visitType || '',
+    labReturn: Boolean(queue.labReturn),
     department: queue.department || visit?.department || '',
     source: visit ? 'Card Room' : 'Clinic Queue',
     status: queue.status,
     priority: queue.priority,
     emergency: queue.isEmergency || visit?.emergency || queue.priority === 'Emergency',
-    waitMinutes: Math.max(0, Math.floor((now - arrivedAt) / 60000)),
+    waitMinutes: Math.max(0, Math.floor((waitUntil - arrivedAt) / 60000)),
     arrivedAt: queue.arrivedAt,
     examination: visit?.examination || null,
   };
@@ -234,17 +291,18 @@ export const getExaminationDashboard = async (req, res) => {
     const queueFilter = { clinicDate, ...(department ? { department } : {}) };
     const { start, end } = getClinicDayBounds();
     const visitFilter = { visitDate: { $gte: start, $lt: end }, ...(department ? { department } : {}) };
-    const [waiting, inConsultation, completedToday, emergency, activeQueue, visits, diagnosisRows, labRows, overviewRows] = await Promise.all([
+    const [waiting, inConsultation, completedToday, emergency, activeQueue, completedQueue, visits, diagnosisRows, labRows, overviewRows] = await Promise.all([
       Queue.countDocuments({ ...queueFilter, status: 'sent_to_examination' }),
       Queue.countDocuments({ ...queueFilter, status: 'in_progress' }),
       Queue.countDocuments({ ...queueFilter, status: 'completed' }),
       Queue.countDocuments({ ...queueFilter, status: { $in: activeQueueStatuses }, $or: [{ priority: 'Emergency' }, { isEmergency: true }] }),
       populateQueueVisits(Queue.find({ ...queueFilter, status: { $in: activeQueueStatuses } }).limit(250)).lean(),
+      populateQueueVisits(Queue.find({ ...queueFilter, status: 'completed' }).sort({ completedAt: -1 }).limit(250)).lean(),
       ClinicVisit.find(visitFilter)
         .select('patientRecordId patientId patientName visitId visitDate diagnosis referred examination status visitType priority')
         .populate({
           path: 'patientRecordId',
-          select: 'cardNumber fullName age sex universityIdNumber governmentIdNumber phoneNumber region town woreda kebele address',
+          select: 'cardNumber fullName age sex universityIdNumber academicDepartment governmentIdNumber phoneNumber region town woreda kebele address dormBlock allergies chronicConditions',
         })
         .sort({ visitDate: -1 })
         .limit(100)
@@ -302,7 +360,10 @@ export const getExaminationDashboard = async (req, res) => {
           },
           topDiagnoses: diagnosisRows.map(({ _id, count }) => ({ name: _id, count })),
         },
-        queue: sortQueueByPriority(activeQueue).map((entry) => toQueueItem(entry)),
+        queue: [
+          ...sortQueueByPriority(activeQueue),
+          ...completedQueue,
+        ].map((entry) => toQueueItem(entry)),
         visits,
       },
     });
@@ -339,9 +400,16 @@ export const getExaminationLabRequests = async (req, res) => {
         'examination.labRequests',
         'examination.labRequestNumber',
         'examination.labStatus',
+        'examination.labRequestedBy',
+        'examination.labRequestedAt',
         'examination.labTestedBy',
+        'examination.labTechnicianSignature',
+        'examination.labEnteredAt',
+        'examination.labTechnicianNotes',
         'examination.labDateOfReport',
+        'examination.labResultReadyAt',
         'examination.labApprovedBy',
+        'examination.labReviewedAt',
         'examination.labApprovedAt',
       ].join(' '))
       .populate({
@@ -358,6 +426,45 @@ export const getExaminationLabRequests = async (req, res) => {
   }
 };
 
+export const getExaminationReferrals = async (req, res) => {
+  try {
+    const department = await getExaminationDepartment(req);
+    const search = trimString(req.query.search, 120);
+    const referralFilter = {
+      ...(department ? { department } : {}),
+      $or: [
+        { referred: true },
+        { 'examination.referral.department': { $type: 'string', $regex: /\S/ } },
+      ],
+    };
+    const visits = await ClinicVisit.find(referralFilter)
+      .select('patientRecordId patientId patientName visitId visitDate visitType priority status diagnosis department referred examination')
+      .populate({
+        path: 'patientRecordId',
+        select: 'cardNumber fullName age sex universityIdNumber governmentIdNumber address dormBlock woreda kebele',
+      })
+      .sort({ visitDate: -1 })
+      .limit(500)
+      .lean();
+    const expression = search ? new RegExp(escapeRegex(search), 'i') : null;
+    const data = visits.filter((visit) => !expression || [
+      visit.patientName,
+      visit.patientId,
+      visit.patientRecordId?.cardNumber,
+      visit.patientRecordId?.fullName,
+      visit.patientRecordId?.universityIdNumber,
+      visit.patientRecordId?.governmentIdNumber,
+      visit.examination?.referral?.department,
+      visit.examination?.referral?.reason,
+      visit.diagnosis,
+    ].some((value) => expression.test(String(value || ''))));
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Failed to load examination referrals:', error);
+    return res.status(500).json({ success: false, message: 'Unable to load examination referrals.' });
+  }
+};
+
 export const listExaminationQueue = async (req, res) => {
   try {
     const department = await getExaminationDepartment(req);
@@ -367,7 +474,13 @@ export const listExaminationQueue = async (req, res) => {
     const filter = {
       clinicDate,
       ...(department ? { department } : {}),
-      ...(status === 'in_progress' ? { status: 'in_progress' } : status === 'all' ? { status: { $in: activeQueueStatuses } } : { status: 'sent_to_examination' }),
+      ...(status === 'in_progress'
+        ? { status: 'in_progress' }
+        : status === 'completed'
+          ? { status: 'completed' }
+          : status === 'all'
+            ? { status: { $in: [...activeQueueStatuses, 'completed'] } }
+            : { status: 'sent_to_examination' }),
     };
     if (search) {
       const expression = new RegExp(escapeRegex(search), 'i');
@@ -437,7 +550,7 @@ export const searchExaminationPatients = async (req, res) => {
         { universityIdNumber: expression },
         { governmentIdNumber: expression },
       ],
-    }).select('patientId cardNumber fullName age sex universityIdNumber governmentIdNumber phoneNumber region town woreda kebele address').sort({ fullName: 1 }).limit(25).lean();
+    }).select('patientId cardNumber fullName age sex universityIdNumber academicDepartment governmentIdNumber phoneNumber region town woreda kebele address').sort({ fullName: 1 }).limit(25).lean();
     return res.status(200).json({ success: true, data: patients });
   } catch (error) {
     console.error('Failed to search Examination Room patients:', error);
@@ -448,7 +561,7 @@ export const searchExaminationPatients = async (req, res) => {
 export const getExaminationPatientHistory = async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Patient reference is invalid.' });
   try {
-    const patient = await Patient.findById(req.params.id).select('patientId cardNumber fullName age sex universityIdNumber governmentIdNumber phoneNumber region town woreda kebele address').lean();
+    const patient = await Patient.findById(req.params.id).select('patientId cardNumber fullName age sex universityIdNumber academicDepartment governmentIdNumber phoneNumber region town woreda kebele address dormBlock allergies chronicConditions').lean();
     if (!patient) return res.status(404).json({ success: false, message: 'Patient record not found.' });
     const visits = await ClinicVisit.find({ $or: [{ patientRecordId: patient._id }, { patientId: patient.patientId }] })
       .select('visitId patientId patientName visitDate department visitType priority status diagnosis examination')
@@ -463,10 +576,83 @@ export const getExaminationPatientHistory = async (req, res) => {
   }
 };
 
+const returnVisitToExaminationQueue = async (req, visit) => {
+  const now = new Date();
+  const clinicDate = getClinicDateKey(now);
+  const existingQueue = await Queue.findOne({ visitId: visit._id, clinicDate }).sort({ createdAt: -1 });
+  let queue;
+
+  if (existingQueue) {
+    queue = await Queue.findOneAndUpdate(
+      { _id: existingQueue._id },
+      {
+        $set: {
+          status: 'sent_to_examination',
+          labReturn: true,
+          arrivedAt: now,
+          inProgressAt: null,
+          completedAt: null,
+        },
+      },
+      { new: true, runValidators: true },
+    );
+  } else {
+    let department = await Department.findOne({
+      status: 'Active',
+      name: visit.department,
+    }).select('name code').lean();
+    if (!department) {
+      department = await Department.findOne({
+        status: 'Active',
+        name: { $regex: 'examination', $options: 'i' },
+      }).select('name code').sort({ name: 1 }).lean();
+    }
+    if (!department) throw new Error('No active Examination department is configured for lab returns.');
+
+    const prefix = String(department.code || 'EXAM').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) || 'EXAM';
+    const counter = await QueueCounter.findOneAndUpdate(
+      { _id: `department-queue-${prefix}-${clinicDate}` },
+      { $inc: { sequence: 1 } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+    queue = await Queue.create({
+      patientId: visit.patientId,
+      patientName: visit.patientName,
+      visitId: visit._id,
+      queueNumber: `${prefix}-${String(counter.sequence).padStart(3, '0')}`,
+      clinicDate,
+      visitType: visit.visitType,
+      priority: visit.priority,
+      department: department.name,
+      status: 'sent_to_examination',
+      labReturn: true,
+      arrivedAt: now,
+      isEmergency: Boolean(visit.emergency || visit.priority === 'Emergency'),
+      createdBy: req.user?._id || null,
+    });
+  }
+
+  if (!queue) throw new Error('Unable to return the patient to the Examination queue.');
+  visit.status = 'Sent to Examination';
+  await visit.save();
+  await writeAuditEvent({
+    req,
+    action: 'LAB_RESULTS_RETURNED_TO_EXAMINATION',
+    entityType: 'queue',
+    entityId: queue._id,
+    details: `Approved laboratory results returned visit ${visit.visitId || visit.patientId} to the Examination queue.`,
+  });
+  return queue;
+};
+
 export const submitExamination = async (req, res) => {
   const { visitId } = req.params;
-  const examinationData = getExaminationData(req.body);
+  const examinationData = getExaminationData(req.body, req.user);
   const diagnosis = trimString(req.body?.diagnosis, 500);
+  const opdValidationError = validateOpdFields(req.body?.opd);
+  if (opdValidationError) {
+    return res.status(400).json({ success: false, message: opdValidationError });
+  }
   if (!mongoose.isValidObjectId(visitId) || !diagnosis || !examinationData.hmisDiagnosis
     || !['Outpatient', 'Emergency', 'Non-emergency', 'Sick Leave'].includes(examinationData.patientCondition)
     || !Number.isInteger(examinationData.sickLeaveDays) || examinationData.sickLeaveDays < 0 || examinationData.sickLeaveDays > 365) {
@@ -489,9 +675,15 @@ export const submitExamination = async (req, res) => {
     visit.status = 'Completed';
     visit.examination = preservePrescriptionWorkflow(
       visit,
-      preserveLabWorkflow(visit, examinationData),
+      preserveLabWorkflow(visit, examinationData, req.user),
       req.user,
     );
+    visit.examination.examiner = {
+      name: trimString(req.user?.name, 120),
+      qualification: trimString(req.user?.qualification, 120),
+      registration: trimString(req.user?.registrationNo || req.user?.registration || req.user?.licenseNumber, 120),
+      signedAt: new Date(),
+    };
     const savedVisit = await visit.save();
     const completedQueue = await Queue.findOneAndUpdate(
       { _id: queue._id, status: 'in_progress' },
@@ -507,6 +699,9 @@ export const submitExamination = async (req, res) => {
       details: `Examination completed for visit ${savedVisit.visitId || savedVisit.patientId}.`,
     });
     req.app.get('io')?.emit('clinic:queue-updated');
+    if (savedVisit.examination.referral?.department) {
+      req.app.get('io')?.emit('clinic:referral-updated', { visitId: String(savedVisit._id) });
+    }
     if (savedVisit.examination.prescriptions?.length) {
       req.app.get('io')?.emit('clinic:prescription-updated', { visitId: String(savedVisit._id) });
     }
@@ -522,7 +717,11 @@ export const saveExaminationDraft = async (req, res) => {
   if (!mongoose.isValidObjectId(visitId)) {
     return res.status(400).json({ success: false, message: 'Clinic visit reference is invalid.' });
   }
-  const examinationData = getExaminationData(req.body);
+  const examinationData = getExaminationData(req.body, req.user);
+  const opdValidationError = validateOpdFields(req.body?.opd);
+  if (opdValidationError) {
+    return res.status(400).json({ success: false, message: opdValidationError });
+  }
   if (!Number.isInteger(examinationData.sickLeaveDays) || examinationData.sickLeaveDays < 0 || examinationData.sickLeaveDays > 365) {
     return res.status(400).json({ success: false, message: 'Enter a valid sick-leave duration.' });
   }
@@ -541,7 +740,7 @@ export const saveExaminationDraft = async (req, res) => {
     visit.referred = Boolean(examinationData.referral.department);
     visit.examination = preservePrescriptionWorkflow(
       visit,
-      preserveLabWorkflow(visit, examinationData),
+      preserveLabWorkflow(visit, examinationData, req.user),
       req.user,
     );
     const savedVisit = await visit.save();
@@ -555,10 +754,16 @@ export const saveExaminationDraft = async (req, res) => {
     if (savedVisit.examination.prescriptions?.length) {
       req.app.get('io')?.emit('clinic:prescription-updated', { visitId: String(savedVisit._id) });
     }
+    if (savedVisit.examination.referral?.department) {
+      req.app.get('io')?.emit('clinic:referral-updated', { visitId: String(savedVisit._id) });
+    }
     return res.status(200).json({ success: true, message: 'Examination draft saved.', data: savedVisit });
   } catch (error) {
     console.error('Failed to save Examination Room draft:', error);
-    return res.status(500).json({ success: false, message: 'Unable to save the examination draft.' });
+    const message = process.env.NODE_ENV === 'production' || !(error instanceof Error)
+      ? 'Unable to save the examination draft.'
+      : `Unable to save the examination draft: ${error.name}: ${error.message}`;
+    return res.status(500).json({ success: false, message });
   }
 };
 
@@ -623,6 +828,48 @@ export const submitPrescription = async (req, res) => {
   } catch (error) {
     console.error('Failed to submit prescription:', error);
     return res.status(500).json({ success: false, message: 'Unable to submit the prescription.' });
+  }
+};
+
+export const getPrescriptionMedicineAvailability = async (req, res) => {
+  const search = trimString(req.query?.search, 150);
+  const searchTerms = search.split(/\s+/).filter((term) => term.length >= 2);
+  if (search.length < 2 || !searchTerms.length) {
+    return res.status(400).json({ success: false, message: 'Enter a medicine name to check dispensary stock.' });
+  }
+  try {
+    const inventory = await ClinicInventory.find({
+      $and: searchTerms.map((term) => ({
+        itemName: { $regex: escapeRegex(term), $options: 'i' },
+      })),
+    })
+      .select('itemName quantity unit batches')
+      .sort({ itemName: 1 })
+      .limit(8)
+      .lean();
+    const now = new Date();
+    const items = inventory.map((item) => {
+      const availableFromBatches = (item.batches || [])
+        .filter((batch) => (
+          Number(batch.quantity) > 0
+          && String(batch.batchNumber || '').trim()
+          && batch.expiryDate
+          && new Date(batch.expiryDate) >= now
+        ))
+        .reduce((sum, batch) => sum + Number(batch.quantity), 0);
+      const availableQuantity = Math.min(availableFromBatches, Number(item.quantity) || 0);
+      return {
+        id: String(item._id),
+        itemName: item.itemName,
+        availableQuantity,
+        unit: item.unit || 'units',
+        inStock: availableQuantity > 0,
+      };
+    });
+    return res.status(200).json({ success: true, data: { items } });
+  } catch (error) {
+    console.error('Failed to check prescription medicine availability:', error);
+    return res.status(500).json({ success: false, message: 'Unable to check dispensary stock.' });
   }
 };
 
@@ -694,6 +941,14 @@ export const saveLabResults = async (req, res) => {
     || new Set(cleanResults.map((item) => item.testCode)).size !== cleanResults.length) {
     return res.status(400).json({ success: false, message: 'Enter a result for each submitted test without duplicate test codes.' });
   }
+  if (req.body?.technicianNotes !== undefined && typeof req.body.technicianNotes !== 'string') {
+    return res.status(400).json({ success: false, message: 'Laboratory technician notes must be text.' });
+  }
+  if (req.body?.technicianSignature !== undefined && typeof req.body.technicianSignature !== 'string') {
+    return res.status(400).json({ success: false, message: 'Laboratory technician signature must be text.' });
+  }
+  const technicianNotes = trimString(req.body?.technicianNotes, 1000);
+  const technicianSignature = trimString(req.body?.technicianSignature, 120);
   const reportDate = req.body?.dateOfReport ? new Date(req.body.dateOfReport) : new Date();
   if (Number.isNaN(reportDate.getTime())) {
     return res.status(400).json({ success: false, message: 'Enter a valid laboratory report date.' });
@@ -724,6 +979,9 @@ export const saveLabResults = async (req, res) => {
     examination.labStatus = allResultsEntered ? 'Results Ready' : 'In Progress';
     examination.labResultReadyAt = allResultsEntered ? new Date() : null;
     examination.labTestedBy = trimString(req.user?.name, 120);
+    examination.labTechnicianSignature = technicianSignature;
+    examination.labEnteredAt = new Date();
+    examination.labTechnicianNotes = technicianNotes;
     examination.labDateOfReport = reportDate;
 
     const savedVisit = await visit.save();
@@ -755,27 +1013,31 @@ export const approveLabResults = async (req, res) => {
     const visit = await ClinicVisit.findById(visitId);
     if (!visit) return res.status(404).json({ success: false, message: 'Clinic visit not found.' });
     const examination = visit.examination;
-    if (examination?.labStatus !== 'Results Ready'
-      || !examination.labRequests?.length
+    const alreadyReviewed = examination?.labStatus === 'Reviewed';
+    if ((!alreadyReviewed && examination?.labStatus !== 'Results Ready')
+      || !examination?.labRequests?.length
       || examination.labRequests.some((request) => !request.result?.trim())) {
       return res.status(409).json({ success: false, message: 'All requested test results must be saved before approval.' });
     }
-    examination.labStatus = 'Reviewed';
-    examination.labReviewedAt = new Date();
-    examination.labApprovedAt = examination.labReviewedAt;
-    examination.labApprovedBy = trimString(req.user?.name, 120);
-    examination.labRequests.forEach((request) => { request.status = 'Reviewed'; });
-
-    const savedVisit = await visit.save();
-    await writeAuditEvent({
-      req,
-      action: 'LAB_RESULTS_APPROVED',
-      entityType: 'clinic_visit',
-      entityId: savedVisit._id,
-      details: `Laboratory results approved for request ${examination.labRequestNumber}.`,
-    });
-    req.app.get('io')?.emit('clinic:lab-request-updated', { visitId: String(savedVisit._id) });
-    return res.status(200).json({ success: true, message: 'Laboratory results approved.', data: savedVisit });
+    if (!alreadyReviewed) {
+      examination.labStatus = 'Reviewed';
+      examination.labReviewedAt = new Date();
+      examination.labApprovedAt = examination.labReviewedAt;
+      examination.labApprovedBy = trimString(req.user?.name, 120);
+      examination.labRequests.forEach((request) => { request.status = 'Reviewed'; });
+      await visit.save();
+      await writeAuditEvent({
+        req,
+        action: 'LAB_RESULTS_APPROVED',
+        entityType: 'clinic_visit',
+        entityId: visit._id,
+        details: `Laboratory results approved for request ${examination.labRequestNumber}.`,
+      });
+    }
+    await returnVisitToExaminationQueue(req, visit);
+    req.app.get('io')?.emit('clinic:queue-updated');
+    req.app.get('io')?.emit('clinic:lab-request-updated', { visitId: String(visit._id) });
+    return res.status(200).json({ success: true, message: 'Laboratory results approved and patient returned to the Examination queue.', data: visit });
   } catch (error) {
     console.error('Failed to approve laboratory results:', error);
     return res.status(500).json({ success: false, message: 'Unable to approve laboratory results.' });

@@ -8,7 +8,9 @@ import {
 import {
   getExaminationDashboard,
   getExaminationLabRequests,
+  getExaminationReferrals,
   getExaminationPatientHistory,
+  getPrescriptionMedicineAvailability,
   listExaminationQueue,
   approveLabResults,
   saveLabResults,
@@ -25,10 +27,12 @@ const router = Router();
 router.use(verifyUser);
 router.get('/dashboard', requireExaminationRoomAccess(), getExaminationDashboard);
 router.get('/lab-requests', requireExaminationOrLabAccess(), getExaminationLabRequests);
+router.get('/referrals', requireExaminationRoomAccess(), getExaminationReferrals);
 router.get('/queue', requireExaminationRoomAccess(), listExaminationQueue);
 router.patch('/queue/:id', requireExaminationRoomAccess(), updateExaminationQueue);
 router.get('/patients', requireExaminationRoomAccess(), searchExaminationPatients);
 router.get('/patients/:id/history', requireExaminationRoomAccess(), getExaminationPatientHistory);
+router.get('/medicines/availability', requireExaminationRoomAccess(), getPrescriptionMedicineAvailability);
 router.patch('/visits/:visitId/examination/draft', requireExaminationRoomAccess(), saveExaminationDraft);
 router.post('/visits/:visitId/prescriptions', requireExaminationRoomAccess(), submitPrescription);
 router.post('/visits/:visitId/examination', requireExaminationRoomAccess(), submitExamination);

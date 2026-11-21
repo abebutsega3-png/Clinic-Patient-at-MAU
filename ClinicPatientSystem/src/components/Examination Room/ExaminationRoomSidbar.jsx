@@ -7,29 +7,36 @@ import {
   FileText,
   Share2,
   BarChart3,
+  ClipboardList,
+  History,
+  Syringe,
   User,
   LogOut,
   ChevronDown,
-  Megaphone
+  Settings,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Sidebar({ activeItem, setActiveItem, isOpen = false, queueCount = 0, labRequestsCount = 0 }) {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const navMenuItems = [
-    { name: 'Dashboard', icon: LayoutDashboard },
-    { name: 'Patient Queue', icon: Users, badge: queueCount },
-    { name: 'Current Consultation', icon: UserCheck },
-    { name: 'Lab Requests', icon: FlaskConical, badge: labRequestsCount },
-    { name: 'Prescriptions', label: 'Prescriptions & Dispensing', icon: Pill },
-    { name: 'Patient Records / History', icon: FileText },
-    { name: 'Referrals', icon: Share2 },
-    { name: 'Reports', icon: BarChart3 },
-    { name: 'Announcements', icon: Megaphone },
+    { name: 'Dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { name: 'Patient Queue', label: 'Patient Queue', icon: Users, badge: queueCount },
+    { name: 'Patient Examination', label: 'Patient Examination', icon: UserCheck },
+    { name: 'Laboratory Requests', label: 'Laboratory Requests', icon: FlaskConical, badge: labRequestsCount },
+    { name: 'Laboratory Results', label: 'Laboratory Results', icon: FlaskConical },
+    { name: 'Prescriptions', label: 'Prescriptions', icon: Pill },
+    { name: 'Patient Referrals', label: 'Patient Referrals', icon: Share2 },
+    { name: 'Referral Registration Log Book', label: 'Referral Registration Log Book', icon: Share2 },
+    { name: 'OPD Register', label: 'OPD Register', icon: ClipboardList },
+    { name: 'Examination Reports', label: 'Examination Reports', icon: BarChart3 },
   ];
 
   return (
     <aside className={`fixed left-0 top-0 z-30 flex h-screen w-64 flex-shrink-0 flex-col justify-between bg-[#0B1E36] text-slate-200 shadow-xl transition-transform duration-200 ${isOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
-      <div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {/* 1. Logo & System Title */}
         <div className="p-4 border-b border-slate-700/60 flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center p-1 border border-amber-400/50">
@@ -54,7 +61,7 @@ export default function Sidebar({ activeItem, setActiveItem, isOpen = false, que
               <UserCheck className="w-5 h-5 text-sky-400" />
               <div className="text-left">
                 <p className="text-xs font-semibold text-white leading-tight">
-                  Examination Room
+                  EXAMINATION ROOM
                 </p>
                 <p className="text-[10px] text-slate-400 leading-tight">
                   (Doctor / Clinician)
@@ -66,7 +73,7 @@ export default function Sidebar({ activeItem, setActiveItem, isOpen = false, que
         </div>
 
         {/* 3. Navigation Links */}
-        <nav className="px-2 space-y-1 mt-1">
+        <nav className="mt-1 space-y-1 px-2">
           {navMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeItem === item.name;
@@ -74,46 +81,54 @@ export default function Sidebar({ activeItem, setActiveItem, isOpen = false, que
               <button
                 key={item.name}
                 onClick={() => setActiveItem && setActiveItem(item.name)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all ${
+                className={`w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-xs font-medium transition-all ${
                   isActive
                     ? 'bg-sky-600 text-white shadow-md font-semibold'
                     : 'text-slate-300 hover:bg-[#162A45] hover:text-white'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <Icon
-                    className={`w-4 h-4 ${
+                    className={`h-4 w-4 shrink-0 ${
                       isActive ? 'text-white' : 'text-slate-400'
                     }`}
                   />
-                  <span className="truncate">{item.label || item.name}</span>
+                  <span className="truncate">{item.label}</span>
                 </div>
                 {item.badge ? (
-                  <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+                  <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
                     {item.badge}
                   </span>
                 ) : null}
               </button>
             );
           })}
-          <Link
-            to="/department-reports"
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium text-slate-300 hover:bg-[#162A45] hover:text-white"
-          >
-            <FileText className="w-4 h-4 text-slate-400" aria-hidden="true" />
-            <span className="truncate">Department Report</span>
-          </Link>
         </nav>
       </div>
 
       {/* 4. Footer Section */}
-      <div>
+      <div className="shrink-0">
         <div className="px-2 py-2 border-t border-slate-700/60 space-y-1">
           <button className="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-[#162A45] hover:text-white rounded-lg transition-colors">
             <User className="w-4 h-4 text-slate-400" />
-            <span>Profile</span>
+            <span>My Profile</span>
           </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-[#162A45] hover:text-white rounded-lg transition-colors">
+          <button
+            type="button"
+            onClick={() => setActiveItem && setActiveItem('Settings')}
+            className="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-[#162A45] hover:text-white rounded-lg transition-colors"
+          >
+            <Settings className="w-4 h-4 text-slate-400" />
+            <span>Settings</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              logout();
+              navigate('/login');
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-[#162A45] hover:text-white rounded-lg transition-colors"
+          >
             <LogOut className="w-4 h-4 text-slate-400" />
             <span>Logout</span>
           </button>

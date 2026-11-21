@@ -61,6 +61,8 @@ function PatientEditDialog({ patient, token, onClose, onSaved }) {
     houseNumber: patient.houseNumber || '',
     emergencyContactName: patient.emergencyContactName || '',
     emergencyContactPhone: patient.emergencyContactPhone || '',
+    allergies: Array.isArray(patient.allergies) ? patient.allergies.join(', ') : patient.allergies || '',
+    chronicConditions: Array.isArray(patient.chronicConditions) ? patient.chronicConditions.join(', ') : patient.chronicConditions || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -103,7 +105,7 @@ function PatientEditDialog({ patient, token, onClose, onSaved }) {
           <div>
             <p className="text-sm font-semibold text-teal-700">MRN · {patient.patientId}</p>
             <h2 id="records-edit-title" className="mt-1 text-xl font-bold text-slate-900">Edit patient information</h2>
-            <p className="mt-1 text-sm text-slate-500">Only demographics are updated. Existing visits and clinical history are unchanged.</p>
+            <p className="mt-1 text-sm text-slate-500">Update demographics, known allergies, and chronic conditions. Existing visits remain unchanged.</p>
           </div>
           <button type="button" onClick={onClose} disabled={saving} aria-label="Close edit form" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={18} /></button>
         </header>
@@ -131,6 +133,14 @@ function PatientEditDialog({ patient, token, onClose, onSaved }) {
           {textField('houseNumber', 'House number', { maxLength: 40 })}
           {textField('emergencyContactName', 'Emergency contact name', { maxLength: 120 })}
           {textField('emergencyContactPhone', 'Emergency contact phone', { maxLength: 30 })}
+          <label className="text-sm font-medium text-slate-700">
+            Known allergies
+            <textarea name="allergies" value={form.allergies} onChange={setField} maxLength={3000} rows={2} className={inputClass} />
+          </label>
+          <label className="text-sm font-medium text-slate-700">
+            Chronic conditions
+            <textarea name="chronicConditions" value={form.chronicConditions} onChange={setField} maxLength={3000} rows={2} className={inputClass} />
+          </label>
         </div>
         <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-4">
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
@@ -452,6 +462,8 @@ export default function CardRoomRecords() {
                   ['Address', [selectedPatient.region, selectedPatient.town, selectedPatient.woreda, selectedPatient.kebele, selectedPatient.dormBlock, selectedPatient.houseNumber].filter(Boolean).join(', ') || selectedPatient.address],
                   ['Emergency contact', selectedPatient.emergencyContactName],
                   ['Emergency contact phone', selectedPatient.emergencyContactPhone],
+                  ['Known allergies', selectedPatient.allergies?.join?.(', ') || selectedPatient.allergies],
+                  ['Chronic conditions', selectedPatient.chronicConditions?.join?.(', ') || selectedPatient.chronicConditions],
                 ]} /></section>
               </div>
             )}

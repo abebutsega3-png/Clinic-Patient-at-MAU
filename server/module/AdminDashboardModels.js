@@ -39,6 +39,7 @@ const queueSchema = new mongoose.Schema({
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   department: { type: String, trim: true, required: true },
   status: { type: String, enum: ['waiting', 'called', 'routed', 'sent_to_examination', 'in_progress', 'completed', 'no_show', 'cancelled'], default: 'waiting' },
+  labReturn: { type: Boolean, default: false },
   arrivedAt: { type: Date, default: Date.now },
   calledAt: { type: Date, default: null },
   inProgressAt: { type: Date, default: null },

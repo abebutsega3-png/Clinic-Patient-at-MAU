@@ -14,6 +14,7 @@ const patientSchema = new mongoose.Schema({
   governmentIdNumber: { type: String, trim: true, default: undefined, maxlength: 80 },
   universityIdNumber: { type: String, trim: true, default: undefined, maxlength: 80 },
   allergies: [{ type: String, trim: true, maxlength: 120 }],
+  chronicConditions: [{ type: String, trim: true, maxlength: 120 }],
   phoneNumber: { type: String, trim: true, default: '', maxlength: 30 },
   patientCategory: { type: String, enum: ['Student', 'Staff', 'Other Authorized Patient'], required: true },
   campus: { type: String, trim: true, default: '', maxlength: 120 },

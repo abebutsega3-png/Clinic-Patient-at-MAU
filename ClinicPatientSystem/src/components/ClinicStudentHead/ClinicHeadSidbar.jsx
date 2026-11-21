@@ -25,6 +25,7 @@ const ClinicHeadSidebar = ({ isOpen = true, onNavigate }) => {
     { label: 'Reports & Analytics', path: '/clinic-head/reports', icon: BarChart3 },
     { label: 'Department Reports', path: '/clinic-head/department-reports', icon: FileText },
     { label: 'Announcements', path: '/clinic-head/announcements', icon: Megaphone },
+        { label: 'Activity Log', path: '/clinic-head/activity-log', icon: Megaphone },
     { label: 'Settings', path: '/clinic-head/settings', icon: Settings },
   ];
 

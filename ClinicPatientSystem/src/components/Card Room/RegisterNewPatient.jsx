@@ -27,6 +27,7 @@ const emptyForm = {
   houseNumber: '',
   universityIdNumber: '',
   allergies: '',
+  chronicConditions: '',
   departmentFaculty: '',
 };
 
@@ -139,6 +140,8 @@ function PatientCard({ patient, onPrint }) {
     ['Sex', patient.sex],
     ['Date of birth', formatDate(patient.dateOfBirth)],
     ['Date of registration', formatDateTime(patient.createdAt)],
+    ['Known allergies', Array.isArray(patient.allergies) ? patient.allergies.join(', ') : patient.allergies],
+    ['Chronic conditions', Array.isArray(patient.chronicConditions) ? patient.chronicConditions.join(', ') : patient.chronicConditions],
     ['Phone number', patient.phoneNumber],
     ['Dorm block / room number', patient.dormBlock],
     ['Home address / Kebele', address],
@@ -453,6 +456,10 @@ export default function RegisterNewPatient() {
                   <label className="block text-sm font-medium text-slate-700">
                     Known allergies (separate multiple entries with commas)
                     <textarea name="allergies" value={form.allergies} onChange={setField} maxLength={1000} rows={2} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. Penicillin, latex" />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Chronic conditions (separate multiple entries with commas)
+                    <textarea name="chronicConditions" value={form.chronicConditions} onChange={setField} maxLength={1000} rows={2} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. Asthma, diabetes" />
                   </label>
                   <div>
                   <Field label="Date of Birth" name="dateOfBirth" type="date" value={form.dateOfBirth} onChange={setField} required max={currentDate} aria-invalid={Boolean(errors.dateOfBirth)} />

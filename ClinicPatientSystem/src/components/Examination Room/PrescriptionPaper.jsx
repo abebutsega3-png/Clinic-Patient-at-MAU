@@ -20,7 +20,11 @@ const newMedicine = () => ({
   priceCents: 0,
 });
 
-const inputClass = 'min-h-8 w-full min-w-0 border-b border-slate-300 bg-transparent px-1 py-1 text-[18px] leading-tight text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-500 print:min-h-0 print:border-0 print:p-0 print:text-[8px]';
+const inputClass = 'min-h-8 w-full min-w-0 border-b border-slate-300 bg-transparent px-1 py-1 text-[13px] leading-tight text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-500 print:min-h-0 print:border-0 print:p-0 print:text-[8px]';
+const getMedicineSearch = (item) => [item.medicine, item.strength, item.form]
+  .map((value) => value?.trim())
+  .filter(Boolean)
+  .join(' ');
 
 function AutoGrowTextarea({ value, onChange, className = '', ...props }) {
   const textareaRef = useRef(null);
@@ -44,7 +48,14 @@ function AutoGrowTextarea({ value, onChange, className = '', ...props }) {
   );
 }
 
-export default function PrescriptionPaper({ visit, doctor, onNewPrescription, onSubmit, saving = false }) {
+export default function PrescriptionPaper({
+  visit,
+  doctor,
+  onNewPrescription,
+  onCheckMedicineStock,
+  onSubmit,
+  saving = false,
+}) {
   const patient = visit?.patientRecordId && typeof visit.patientRecordId === 'object'
     ? visit.patientRecordId
     : {};
@@ -58,6 +69,7 @@ export default function PrescriptionPaper({ visit, doctor, onNewPrescription, on
   const [weight, setWeight] = useState(examination.vitals?.weight || '');
   const [diagnosis, setDiagnosis] = useState(visit?.diagnosis || '');
   const [patientType, setPatientType] = useState(examination.prescriptionPatientType || 'outpatient');
+  const [stockChecks, setStockChecks] = useState({});
   const patientName = visit?.name || visit?.patientName || patient.fullName || '—';
   const cardNumber = visit?.cardNumber || patient.cardNumber || visit?.patientId || '—';
   const idNumber = visit?.governmentIdNumber || patient.governmentIdNumber
@@ -70,6 +82,24 @@ export default function PrescriptionPaper({ visit, doctor, onNewPrescription, on
     setPrescriptions((items) => items.map((item, itemIndex) => (
       itemIndex === index ? { ...item, [field]: value } : item
     )));
+    if (['medicine', 'strength', 'form'].includes(field)) {
+      setStockChecks((checks) => {
+        const nextChecks = { ...checks };
+        delete nextChecks[index];
+        return nextChecks;
+      });
+    }
+  };
+  const checkMedicineStock = async (index) => {
+    const search = getMedicineSearch(prescriptions[index] || {});
+    if (!onCheckMedicineStock || search.length < 2) return;
+    setStockChecks((checks) => ({ ...checks, [index]: { query: search, status: 'loading', items: [] } }));
+    try {
+      const items = await onCheckMedicineStock(search);
+      setStockChecks((checks) => ({ ...checks, [index]: { query: search, status: 'loaded', items } }));
+    } catch (stockError) {
+      setStockChecks((checks) => ({ ...checks, [index]: { query: search, status: 'error', message: stockError.message } }));
+    }
   };
   const submit = (event) => {
     event.preventDefault();
@@ -184,15 +214,15 @@ export default function PrescriptionPaper({ visit, doctor, onNewPrescription, on
                       <div className="relative grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
                         <label className="col-span-2 block space-y-0.5 sm:col-span-4">
                           <span className="block text-[10px] font-semibold text-slate-600">Medicine name</span>
-                          <AutoGrowTextarea aria-label="Medicine name" placeholder="e.g. Amoxicillin" value={item.medicine || ''} onChange={(event) => updateMedicine(index, 'medicine', event.target.value)} maxLength="300" className="font-semibold" />
+                          <AutoGrowTextarea aria-label="Medicine name" placeholder="e.g. Amoxicillin" value={item.medicine || ''} onChange={(event) => updateMedicine(index, 'medicine', event.target.value)} onBlur={() => void checkMedicineStock(index)} maxLength="300" className="font-semibold" />
                         </label>
                         <label className="block space-y-0.5">
                           <span className="block text-[10px] font-semibold text-slate-600">Strength</span>
-                          <AutoGrowTextarea aria-label="Strength" placeholder="e.g. 500 mg" value={item.strength || ''} onChange={(event) => updateMedicine(index, 'strength', event.target.value)} maxLength="100" />
+                          <AutoGrowTextarea aria-label="Strength" placeholder="e.g. 500 mg" value={item.strength || ''} onChange={(event) => updateMedicine(index, 'strength', event.target.value)} onBlur={() => void checkMedicineStock(index)} maxLength="100" />
                         </label>
                         <label className="block space-y-0.5">
                           <span className="block text-[10px] font-semibold text-slate-600">Dosage form</span>
-                          <AutoGrowTextarea aria-label="Dosage form" placeholder="e.g. tablet" value={item.form || ''} onChange={(event) => updateMedicine(index, 'form', event.target.value)} maxLength="100" />
+                          <AutoGrowTextarea aria-label="Dosage form" placeholder="e.g. tablet" value={item.form || ''} onChange={(event) => updateMedicine(index, 'form', event.target.value)} onBlur={() => void checkMedicineStock(index)} maxLength="100" />
                         </label>
                         <label className="block space-y-0.5">
                           <span className="block text-[10px] font-semibold text-slate-600">Dose</span>
@@ -218,7 +248,46 @@ export default function PrescriptionPaper({ visit, doctor, onNewPrescription, on
                           <span className="block text-[10px] font-semibold text-slate-600">How to use &amp; other information</span>
                           <AutoGrowTextarea aria-label="How to use and other information" placeholder="e.g. Take with food" value={item.instructions || ''} onChange={(event) => updateMedicine(index, 'instructions', event.target.value)} maxLength="300" className="min-h-12" />
                         </label>
-                        <button type="button" aria-label="Remove medicine" onClick={() => setPrescriptions((items) => items.filter((_, itemIndex) => itemIndex !== index))} className="screen-only absolute right-0 top-0 text-rose-700"><Trash2 size={14} /></button>
+                        <div className="screen-only col-span-2 flex flex-wrap items-center gap-2 sm:col-span-4">
+                          <button
+                            type="button"
+                            disabled={getMedicineSearch(item).length < 2 || stockChecks[index]?.status === 'loading'}
+                            onClick={() => void checkMedicineStock(index)}
+                            className="screen-only rounded border border-slate-300 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            {stockChecks[index]?.status === 'loading' ? 'Checking stock…' : 'Check dispensary stock'}
+                          </button>
+                          {stockChecks[index]?.query === getMedicineSearch(item) && stockChecks[index]?.status === 'loaded' && (
+                            stockChecks[index].items.length
+                              ? <div role="status" className="flex flex-wrap gap-1">
+                                {stockChecks[index].items.map((stockItem) => (
+                                  <span
+                                    key={stockItem.id}
+                                    className={`rounded px-2 py-1 text-[10px] font-semibold ${stockItem.inStock ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}
+                                  >
+                                    {stockItem.inStock ? 'In stock' : 'Out of stock'}: {stockItem.itemName} ({stockItem.availableQuantity} {stockItem.unit})
+                                  </span>
+                                ))}
+                              </div>
+                              : <span role="status" className="text-[10px] font-semibold text-rose-700">No matching item in dispensary stock.</span>
+                          )}
+                          {stockChecks[index]?.query === getMedicineSearch(item) && stockChecks[index]?.status === 'error' && (
+                            <span role="alert" className="text-[10px] font-semibold text-rose-700">
+                              {stockChecks[index].message || 'Unable to check dispensary stock.'}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          aria-label="Remove medicine"
+                          onClick={() => {
+                            setPrescriptions((items) => items.filter((_, itemIndex) => itemIndex !== index));
+                            setStockChecks({});
+                          }}
+                          className="screen-only absolute right-0 top-0 text-rose-700"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     ) : (
                       <span className="whitespace-pre-wrap">
@@ -248,10 +317,10 @@ export default function PrescriptionPaper({ visit, doctor, onNewPrescription, on
 
         {onSubmit && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 screen-only">
           <p className="text-[11px] text-slate-500">Price, evaluation and dispensing information are managed by the pharmacy.</p>
-          <button type="submit" disabled={saving || !hasPrescription} className="rounded bg-emerald-700 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">{saving ? 'Submitting…' : 'Submit to Pharmacy'}</button>
+          <button type="submit" disabled={saving || !hasPrescription} className="rounded bg-emerald-700 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">{saving ? 'Sending…' : 'Send to Dispensary'}</button>
         </div>}
 
-        <footer className="mt-5 grid gap-x-3 gap-y-4 text-[18px] print:text-[9px] sm:grid-cols-3">
+        <footer className="mt-5 grid gap-x-3 gap-y-4 text-[11px] leading-relaxed print:text-[8px] sm:grid-cols-3">
           <div className="space-y-1">
             <strong className="underline">Prescriber’s</strong>
             <p>Full Name: <span className="inline-block min-w-16 border-b border-slate-500">{prescriber.name || doctor?.name || ''}</span></p>

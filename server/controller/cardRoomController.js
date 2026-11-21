@@ -45,6 +45,8 @@ const editablePatientFields = [
   'emergencyContactPhone',
   'governmentIdNumber',
   'universityIdNumber',
+  'allergies',
+  'chronicConditions',
 ];
 
 const getClinicDateParts = (date) => Object.fromEntries(new Intl.DateTimeFormat('en', {
@@ -100,6 +102,7 @@ const patientSummary = (patient) => ({
   governmentIdNumber: patient.governmentIdNumber || '',
   universityIdNumber: patient.universityIdNumber || '',
   allergies: patient.allergies || [],
+  chronicConditions: patient.chronicConditions || [],
   phoneNumber: patient.phoneNumber || '',
   patientCategory: patient.patientCategory,
   campus: patient.campus || '',
@@ -396,6 +399,9 @@ export const createCardRoomPatient = async (req, res) => {
       allergies: Array.isArray(input.allergies)
         ? input.allergies.map((allergy) => trimString(allergy, 120)).filter(Boolean).slice(0, 30)
         : trimString(input.allergies, 1000).split(',').map((allergy) => allergy.trim().slice(0, 120)).filter(Boolean).slice(0, 30),
+      chronicConditions: Array.isArray(input.chronicConditions)
+        ? input.chronicConditions.map((condition) => trimString(condition, 120)).filter(Boolean).slice(0, 30)
+        : trimString(input.chronicConditions, 1000).split(',').map((condition) => condition.trim().slice(0, 120)).filter(Boolean).slice(0, 30),
       phoneNumber,
       patientCategory,
       campus,
@@ -555,6 +561,11 @@ export const updateCardRoomPatient = async (req, res) => {
         if (age < 0 || age > 125) return res.status(400).json({ success: false, message: 'Date of birth must produce an age between 0 and 125.' });
         updates.age = age;
       }
+    } else if (['allergies', 'chronicConditions'].includes(field)) {
+      const entries = Array.isArray(input[field])
+        ? input[field]
+        : trimString(input[field], 3000).split(',');
+      updates[field] = entries.map((entry) => trimString(entry, 120)).filter(Boolean).slice(0, 30);
     } else {
       const max = field === 'address' ? 500
         : ['governmentIdNumber', 'universityIdNumber'].includes(field) ? 80

@@ -31,6 +31,7 @@ function LabRequestForm({
   onSaveResults,
   onApproveResults,
   canProcessResults = false,
+  initialTab = 'form',
   submitting = false,
   error = '',
   notice = '',
@@ -39,9 +40,11 @@ function LabRequestForm({
   const [clinicalNote, setClinicalNote] = useState('');
   const [urgent, setUrgent] = useState(false);
   const [selectedVisitId, setSelectedVisitId] = useState('');
-  const [activeLabTab, setActiveLabTab] = useState('form');
+  const [activeLabTab, setActiveLabTab] = useState(initialTab);
   const [resultDraftsByVisit, setResultDraftsByVisit] = useState({});
   const [reportDatesByVisit, setReportDatesByVisit] = useState({});
+  const [technicianNotesByVisit, setTechnicianNotesByVisit] = useState({});
+  const [technicianSignaturesByVisit, setTechnicianSignaturesByVisit] = useState({});
   const [todayInput] = useState(toDateInputValue);
 
   const selectedCount = Object.values(selectedTests).reduce((count, items) => count + items.length, 0);
@@ -92,7 +95,7 @@ function LabRequestForm({
     if (!patient) return;
     const tests = labTestCategories.flatMap((category) => category.items
       .filter(([code]) => selectedTests[category.name]?.includes(code))
-      .map(([testCode, testName]) => ({ testCode, testName })));
+      .map(([testCode, testName]) => ({ testCode, testName, category: category.name })));
     if (!tests.length) return;
     const saved = await onSubmit?.({ tests, clinicalNote, priority: urgent ? 'urgent' : 'normal' });
     if (saved) clearForm();
@@ -118,6 +121,12 @@ function LabRequestForm({
   const resultDrafts = resultDraftsByVisit[selectedVisitKey] || savedResultDrafts;
   const dateOfReport = reportDatesByVisit[selectedVisitKey]
     || (selectedRequest?.labDateOfReport ? toDateInputValue(selectedRequest.labDateOfReport) : todayInput);
+  const technicianNotes = technicianNotesByVisit[selectedVisitKey]
+    ?? selectedRequest?.labTechnicianNotes
+    ?? '';
+  const technicianSignature = technicianSignaturesByVisit[selectedVisitKey]
+    ?? selectedRequest?.labTechnicianSignature
+    ?? '';
 
   const updateResultDraft = (testCode, field, value) => {
     setResultDraftsByVisit((current) => ({
@@ -163,7 +172,19 @@ function LabRequestForm({
       visitId: selectedRequest.visitId,
       results,
       dateOfReport,
+      technicianNotes,
+      technicianSignature,
     });
+  };
+  const getTestCategory = (test) => test.category
+    || labTestCategories.find((category) => category.items.some(([code, name]) => (
+      code === test.testCode || name === test.testName
+    )))?.name
+    || 'Other tests';
+  const formatFormDate = (value) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
   };
 
   return (
@@ -171,9 +192,10 @@ function LabRequestForm({
       <style>{`
         @media print {
           body * { visibility: hidden !important; }
-          .lab-request-print, .lab-request-print * { visibility: visible !important; }
+          .lab-request-print, .lab-request-print *, .lab-result-print, .lab-result-print * { visibility: visible !important; }
           .lab-request-print { position: fixed !important; inset: 0 auto auto 0 !important; width: 100% !important; min-height: 0 !important; margin: 0 !important; border: 0 !important; border-radius: 0 !important; padding: 8mm !important; box-shadow: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          .lab-request-screen-only { display: none !important; }
+          .lab-result-print { display: block !important; position: fixed !important; inset: 0 auto auto 0 !important; width: 100% !important; min-height: 0 !important; margin: 0 !important; border: 0 !important; border-radius: 0 !important; padding: 8mm !important; box-shadow: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          .lab-request-screen-only, .lab-result-screen-only { display: none !important; }
           @page { size: landscape; margin: 8mm; }
         }
       `}</style>
@@ -365,7 +387,7 @@ function LabRequestForm({
                 <Printer size={14} /> Print
               </button>
               <button type="submit" disabled={!patient || !selectedCount || submitting} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">
-                <Send size={14} /> {submitting ? 'Submitting…' : 'Submit Request'}
+                <Send size={14} /> {submitting ? 'Sending…' : 'Send to Laboratory'}
               </button>
             </div>
           </form>
@@ -421,6 +443,12 @@ function LabRequestForm({
                   {selectedRequest.clinicalNote && <p className="mt-1 text-xs text-slate-600">Clinical note: {selectedRequest.clinicalNote}</p>}
                 </div>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${labStatus === 'Reviewed' ? 'bg-emerald-100 text-emerald-800' : labStatus === 'Results Ready' ? 'bg-teal-100 text-teal-800' : labStatus === 'In Progress' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-900'}`}>{labStatus}</span>
+              </div>
+
+              <div className="lab-result-screen-only flex justify-end">
+                <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-white px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-50">
+                  <Printer size={14} /> Print Form
+                </button>
               </div>
 
               <ol className="grid grid-cols-2 gap-2 sm:grid-cols-5" aria-label="Laboratory request progress">
@@ -481,8 +509,37 @@ function LabRequestForm({
                 </table>
               </div>
 
+              <label className="block border-t border-slate-100 pt-3 text-xs text-slate-600">
+                <strong>Technician note</strong>
+                <textarea
+                  value={technicianNotes}
+                  onChange={(event) => setTechnicianNotesByVisit((current) => ({
+                    ...current,
+                    [selectedVisitKey]: event.target.value,
+                  }))}
+                  disabled={!canProcessResults || labStatus === 'Reviewed'}
+                  maxLength={1000}
+                  rows={2}
+                  placeholder="Sample quality or other laboratory remarks"
+                  className="mt-1 block w-full rounded border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-50"
+                />
+              </label>
+
               <div className="grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
                 <p className="text-xs text-slate-600"><strong>Tested by:</strong> {selectedRequest.labTestedBy || 'Not recorded'}</p>
+                <label className="text-xs text-slate-600"><strong>Lab technician signature</strong>
+                  <input
+                    value={technicianSignature}
+                    onChange={(event) => setTechnicianSignaturesByVisit((current) => ({
+                      ...current,
+                      [selectedVisitKey]: event.target.value,
+                    }))}
+                    disabled={!canProcessResults || labStatus === 'Reviewed'}
+                    maxLength={120}
+                    className="mt-1 block w-full rounded border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-50"
+                    placeholder="Type technician name or signature"
+                  />
+                </label>
                 <label className="text-xs text-slate-600"><strong>Date of report</strong>
                   <input type="date" value={dateOfReport} disabled={!canProcessResults || labStatus === 'Reviewed'} onChange={(event) => setReportDatesByVisit((current) => ({ ...current, [selectedVisitKey]: event.target.value }))} className="mt-1 block w-full rounded border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-50" />
                 </label>
@@ -502,6 +559,49 @@ function LabRequestForm({
                 </div>
               )}
               {labStatus === 'Reviewed' && <p className="flex items-center gap-2 rounded-md bg-emerald-50 p-3 text-xs font-semibold text-emerald-800"><Check size={15} /> Results approved on {selectedRequest.labApprovedAt ? new Date(selectedRequest.labApprovedAt).toLocaleString() : '—'}.</p>}
+
+              <article className="lab-result-print hidden border border-amber-900/40 bg-[#e8c94e] text-[#332b1b]">
+                <header className="border-b border-amber-900/40 pb-3 text-center font-serif leading-tight">
+                  <p className="text-lg font-bold tracking-wide">MEKDELA AMBA UNIVERSITY</p>
+                  <h2 className="mt-1 text-xl font-bold uppercase underline">Laboratory Request &amp; Result Form</h2>
+                </header>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-b border-amber-900/40 py-3 text-xs sm:grid-cols-3">
+                  <p><strong>Name:</strong> {selectedRequest.patientName || patientName || '—'}</p>
+                  <p><strong>Age:</strong> {selectedRequest.age ?? age}</p>
+                  <p><strong>Sex:</strong> {selectedRequest.gender || sex}</p>
+                  <p><strong>Record No:</strong> {selectedRequest.mrn || selectedRequest.patientId || mrn}</p>
+                  <p><strong>Request By:</strong> {selectedRequest.labRequestedBy || requestBy || '—'}</p>
+                  <p><strong>Date:</strong> {formatFormDate(selectedRequest.labRequestedAt || selectedRequest.visitDate)}</p>
+                  <p><strong>Order ID:</strong> {selectedRequest.labRequestNumber || '—'}</p>
+                  <p><strong>Status:</strong> {labStatus}</p>
+                  <p><strong>Date of Report:</strong> {formatFormDate(selectedRequest.labDateOfReport || dateOfReport)}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 py-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {labTestCategories.map((category) => {
+                    const categoryTests = selectedRequest.tests.filter((test) => getTestCategory(test) === category.name);
+                    return (
+                      <section key={category.name} className="break-inside-avoid border-t border-amber-900/40 pt-1.5">
+                        <h3 className="text-xs font-bold uppercase underline">{category.name}</h3>
+                        {categoryTests.length ? categoryTests.map((test) => (
+                          <div key={test.testCode || test.testName} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 border-b border-amber-900/15 py-1 text-[10px]">
+                            <span>[X] {test.testName}</span>
+                            <span className="text-right font-semibold">{test.result || 'Pending'} {test.unit || ''}</span>
+                            <span className="text-[9px]">Ref: {test.referenceRange || '—'}</span>
+                            <span className="text-right text-[9px]">Flag: {calculateFlag(resultDrafts[test.testCode || test.testName] || test)}</span>
+                          </div>
+                        )) : <p className="py-1 text-[9px]">[ ] No tests requested</p>}
+                      </section>
+                    );
+                  })}
+                </div>
+                <footer className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-amber-900/40 pt-3 text-xs sm:grid-cols-4">
+                  <p><strong>Tested By:</strong><br />{selectedRequest.labTestedBy || '—'}</p>
+                  <p><strong>Signature of Lab Tech:</strong><br />{technicianSignature || '—'}</p>
+                  <p><strong>Approved By:</strong><br />{selectedRequest.labApprovedBy || '—'}</p>
+                  <p><strong>Verified At:</strong><br />{formatFormDate(selectedRequest.labApprovedAt)}</p>
+                  <p className="col-span-2 sm:col-span-4"><strong>Lab Remarks:</strong> {technicianNotes || '—'}</p>
+                </footer>
+              </article>
             </div>
           ) : (
             <div className="p-10 text-center text-sm text-slate-500">

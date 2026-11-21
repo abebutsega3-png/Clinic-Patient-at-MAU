@@ -7,7 +7,7 @@ import { useAuth } from '../components/context/AuthContext.jsx';
 
 const ExaminationRoom = () => {
 	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const [activeItem, setActiveItem] = useState('Patient Queue');
+	const [activeItem, setActiveItem] = useState('Dashboard');
 	const [queueSummary, setQueueSummary] = useState({ queueCount: 0, labRequestsCount: 0 });
 	const { user, token } = useAuth();
 	const location = useLocation();
