@@ -5,6 +5,7 @@ import ClinicVisit from '../module/ClinicVisit.js';
 import Department from '../module/Department.js';
 import Patient from '../module/Patient.js';
 import QueueCounter from '../module/QueueCounter.js';
+import ReferralLog from '../module/referralLogBook.js';
 import { writeAuditEvent } from '../utils/auditLogger.js';
 
 const clinicTimeZone = 'Africa/Addis_Ababa';
@@ -550,7 +551,7 @@ export const searchExaminationPatients = async (req, res) => {
         { universityIdNumber: expression },
         { governmentIdNumber: expression },
       ],
-    }).select('patientId cardNumber fullName age sex universityIdNumber academicDepartment governmentIdNumber phoneNumber region town woreda kebele address').sort({ fullName: 1 }).limit(25).lean();
+    }).select('patientId cardNumber fullName firstName fatherName grandfatherName age sex dateOfBirth createdAt patientCategory universityIdNumber academicDepartment governmentIdNumber phoneNumber region town woreda kebele address').sort({ fullName: 1 }).limit(25).lean();
     return res.status(200).json({ success: true, data: patients });
   } catch (error) {
     console.error('Failed to search Examination Room patients:', error);
@@ -561,7 +562,7 @@ export const searchExaminationPatients = async (req, res) => {
 export const getExaminationPatientHistory = async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Patient reference is invalid.' });
   try {
-    const patient = await Patient.findById(req.params.id).select('patientId cardNumber fullName age sex universityIdNumber academicDepartment governmentIdNumber phoneNumber region town woreda kebele address dormBlock allergies chronicConditions').lean();
+    const patient = await Patient.findById(req.params.id).select('patientId cardNumber fullName firstName fatherName grandfatherName age sex dateOfBirth createdAt patientCategory universityIdNumber academicDepartment governmentIdNumber phoneNumber region town woreda kebele address dormBlock houseNumber allergies chronicConditions').lean();
     if (!patient) return res.status(404).json({ success: false, message: 'Patient record not found.' });
     const visits = await ClinicVisit.find({ $or: [{ patientRecordId: patient._id }, { patientId: patient.patientId }] })
       .select('visitId patientId patientName visitDate department visitType priority status diagnosis examination')
@@ -645,6 +646,56 @@ const returnVisitToExaminationQueue = async (req, visit) => {
   return queue;
 };
 
+const createReferralLogEntry = async ({ visit, examinationData, user }) => {
+  const referralDepartment = trimString(examinationData.referral.department, 120);
+  const sickLeaveDays = Number(examinationData.sickLeaveDays || 0);
+  const isSickLeave = examinationData.patientCondition === 'Sick Leave' || sickLeaveDays > 0;
+  if (!referralDepartment && !isSickLeave) return null;
+
+  const existing = await ReferralLog.findOne({ examinationVisitId: visit._id });
+  if (existing) return existing;
+
+  let patientCardNumber = '';
+  if (visit.patientRecordId) {
+    const patient = await Patient.findById(visit.patientRecordId).select('cardNumber').lean();
+    patientCardNumber = trimString(patient?.cardNumber, 80);
+  }
+  if (!patientCardNumber) {
+    const patient = await Patient.findOne({ patientId: visit.patientId }).select('cardNumber').lean();
+    patientCardNumber = trimString(patient?.cardNumber, 80);
+  }
+  if (!patientCardNumber) patientCardNumber = trimString(visit.patientId, 80);
+
+  let patientCondition = 'Non emergency';
+  if (isSickLeave) patientCondition = 'Sick leave';
+  else if (examinationData.patientCondition === 'Emergency' || examinationData.referral.emergency) patientCondition = 'Emergency';
+
+  const lastRecord = await ReferralLog.findOne().sort({ serialNo: -1 });
+  const now = new Date();
+  const logDate = visit.visitDate ? new Date(visit.visitDate) : now;
+  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  return ReferralLog.create({
+    examinationVisitId: visit._id,
+    serialNo: lastRecord ? lastRecord.serialNo + 1 : 1,
+    date: logDate,
+    patientCardNumber,
+    diseaseHmisClassification: trimString(examinationData.hmisDiagnosis || visit.diagnosis, 500),
+    patientCondition,
+    referredByHealthProfession: trimString(examinationData.referral.referredBy || user?.name, 120),
+    referredOrAmbulanceDriver: trimString(
+      examinationData.referral.ambulanceDriver || referralDepartment,
+      120,
+    ),
+    time: examinationData.referral.takeOffTime || time,
+    remark: trimString(
+      examinationData.referral.remark
+        || (isSickLeave ? `${sickLeaveDays} day${sickLeaveDays === 1 ? '' : 's'} sick leave` : examinationData.referral.reason),
+      1000,
+    ),
+  });
+};
+
 export const submitExamination = async (req, res) => {
   const { visitId } = req.params;
   const examinationData = getExaminationData(req.body, req.user);
@@ -685,6 +736,19 @@ export const submitExamination = async (req, res) => {
       signedAt: new Date(),
     };
     const savedVisit = await visit.save();
+    try {
+      await createReferralLogEntry({
+        visit: savedVisit,
+        examinationData,
+        user: req.user,
+      });
+    } catch (logError) {
+      console.error('Failed to create referral log entry for completed examination:', logError);
+      return res.status(500).json({
+        success: false,
+        message: 'Examination data was saved, but its Referral Log Book entry failed. Retry completing the examination.',
+      });
+    }
     const completedQueue = await Queue.findOneAndUpdate(
       { _id: queue._id, status: 'in_progress' },
       { $set: { status: 'completed', completedAt: new Date() } },

@@ -31,6 +31,7 @@ export default function Sidebar({ activeItem, setActiveItem, isOpen = false, que
     { name: 'Patient Referrals', label: 'Patient Referrals', icon: Share2 },
     { name: 'Referral Registration Log Book', label: 'Referral Registration Log Book', icon: Share2 },
     { name: 'OPD Register', label: 'OPD Register', icon: ClipboardList },
+    { name: 'Send to Card Room', label: 'Send to Card Room', icon: ClipboardList },
     { name: 'Examination Reports', label: 'Examination Reports', icon: BarChart3 },
   ];
 
@@ -109,7 +110,11 @@ export default function Sidebar({ activeItem, setActiveItem, isOpen = false, que
       {/* 4. Footer Section */}
       <div className="shrink-0">
         <div className="px-2 py-2 border-t border-slate-700/60 space-y-1">
-          <button className="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-[#162A45] hover:text-white rounded-lg transition-colors">
+          <button
+            type="button"
+            onClick={() => setActiveItem?.('My Profile')}
+            className="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-[#162A45] hover:text-white rounded-lg transition-colors"
+          >
             <User className="w-4 h-4 text-slate-400" />
             <span>My Profile</span>
           </button>

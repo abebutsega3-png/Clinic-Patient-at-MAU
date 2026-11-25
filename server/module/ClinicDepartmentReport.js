@@ -17,6 +17,10 @@ const clinicDepartmentReportSchema = new mongoose.Schema({
   problemsIncidents: { type: String, default: '', maxlength: 5000 },
   medicineSupplyStatus: { type: String, default: '', maxlength: 3000 },
   additionalNotes: { type: String, default: '', maxlength: 5000 },
+  reportFilters: { type: mongoose.Schema.Types.Mixed, default: null },
+  reportSummary: { type: mongoose.Schema.Types.Mixed, default: null },
+  reportRecords: { type: mongoose.Schema.Types.Mixed, default: null },
+  deliveryStatus: { type: String, enum: ['SENT', ''], default: '' },
   submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   submittedAt: { type: Date, default: Date.now, index: true },
   status: {

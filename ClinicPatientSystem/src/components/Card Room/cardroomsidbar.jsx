@@ -1,6 +1,7 @@
 import {
   ClipboardList,
   FileText,
+  Inbox,
   LayoutDashboard,
   LogOut,
   Megaphone,
@@ -13,6 +14,7 @@ const menuItems = [
   { label: 'Dashboard', path: '/card-room', icon: LayoutDashboard, end: true },
   { label: 'Register New Patient', path: '/card-room/patients', icon: UserRound, end: true },
   { label: 'Queue Management', path: '/card-room/queue', icon: ClipboardList },
+  { label: 'Incoming from Examination', path: '/card-room/incoming-documents', icon: Inbox },
   { label: 'Patient Card / Records', path: '/card-room/records', icon: FileText },
     { label: 'Requests & Procurement', path: '/card-room/requests-and-procurement', icon: ShoppingCart },
   { label: 'Reports', path: '/card-room/reports', icon: ClipboardList },

@@ -29,6 +29,9 @@ import LabRequestForm from './LabRequestForm.jsx';
 import PrescriptionPaper from './PrescriptionPaper.jsx';
 import OpdRegister from './OpdRegister.jsx';
 import PatientReferrals from './PatientReferrals.jsx';
+import ReferralLogBook from './ReferralLogBook.jsx';
+import ExaminationReports from './ExaminationReports.jsx';
+import SendToCardRoom from './SendToCardRoom.jsx';
 
 const parseFormList = (formData, fieldName) => {
   const value = formData.get(fieldName);
@@ -170,11 +173,22 @@ function ExaminationDashboardContent({ activeItem = 'Dashboard', onNavigate, onQ
   const [selectedQueueHistoryState, setSelectedQueueHistory] = useState({ patientId: '', data: null, loading: false });
   const [savingVisit, setSavingVisit] = useState(false);
   const [selectedPrescriptionHistoryId, setSelectedPrescriptionHistoryId] = useState('');
+  const [navbarLanguage, setNavbarLanguage] = useState(
+    () => localStorage.getItem('examination-room-language') || 'en',
+  );
   const canProcessLabResults = [
     user?.activeRole,
     user?.role,
     ...(Array.isArray(user?.roles) ? user.roles : []),
   ].some((role) => String(role || '').toLowerCase().includes('lab'));
+
+  useEffect(() => {
+    const handleLanguageChange = (event) => {
+      setNavbarLanguage(event.detail === 'am' ? 'am' : 'en');
+    };
+    window.addEventListener('examination-room-language-change', handleLanguageChange);
+    return () => window.removeEventListener('examination-room-language-change', handleLanguageChange);
+  }, []);
 
   const request = async (path, options = {}) => {
     const response = await fetch(`/api/examination${path}`, {
@@ -764,6 +778,72 @@ function ExaminationDashboardContent({ activeItem = 'Dashboard', onNavigate, onQ
     return <OpdRegister />;
   }
 
+  if (activeItem === 'Send to Card Room') {
+    return <SendToCardRoom />;
+  }
+
+  if (activeItem === 'My Profile') {
+    const profileFields = [
+      ['Full name', user?.name || user?.fullName || user?.username],
+      ['Username', user?.username],
+      ['Email', user?.email],
+      ['Role', user?.activeRole || user?.role],
+      ['Department', user?.department],
+      ['Phone', user?.phone || user?.phoneNumber],
+    ].filter(([, value]) => value);
+
+    return (
+      <section className="mx-auto max-w-3xl space-y-4">
+        <header>
+          <h1 className="text-2xl font-bold text-slate-900">My Profile</h1>
+          <p className="mt-1 text-sm text-slate-500">Your Examination Room account details.</p>
+        </header>
+        <dl className="grid gap-3 rounded-xl border border-slate-200 bg-white p-5 sm:grid-cols-2">
+          {profileFields.map(([label, value]) => (
+            <div key={label} className="rounded-lg bg-slate-50 p-3">
+              <dt className="text-xs font-medium text-slate-500">{label}</dt>
+              <dd className="mt-1 break-words text-sm font-semibold text-slate-800">{value}</dd>
+            </div>
+          ))}
+          {!profileFields.length && (
+            <p className="text-sm text-slate-500">No profile details are available for this account.</p>
+          )}
+        </dl>
+      </section>
+    );
+  }
+
+  if (activeItem === 'Settings') {
+    return (
+      <section className="mx-auto max-w-3xl space-y-4">
+        <header>
+          <h1 className="text-2xl font-bold text-slate-900">Dashboard Settings</h1>
+          <p className="mt-1 text-sm text-slate-500">Manage your Examination Room display preferences.</p>
+        </header>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <label htmlFor="examination-navbar-language" className="block text-sm font-semibold text-slate-800">
+            Navbar language
+          </label>
+          <p className="mt-1 text-xs text-slate-500">Choose the language used for Examination Room navbar controls.</p>
+          <select
+            id="examination-navbar-language"
+            value={navbarLanguage}
+            onChange={(event) => {
+              const nextLanguage = event.target.value;
+              localStorage.setItem('examination-room-language', nextLanguage);
+              setNavbarLanguage(nextLanguage);
+              window.dispatchEvent(new CustomEvent('examination-room-language-change', { detail: nextLanguage }));
+            }}
+            className="mt-3 w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-100"
+          >
+            <option value="en">English</option>
+            <option value="am">አማርኛ</option>
+          </select>
+        </div>
+      </section>
+    );
+  }
+
   if (activeItem === 'Patient Referrals') {
     return (
       <PatientReferrals
@@ -777,6 +857,14 @@ function ExaminationDashboardContent({ activeItem = 'Dashboard', onNavigate, onQ
         onOpenConsultation={() => onNavigate?.('Patient Examination')}
       />
     );
+  }
+
+  if (activeItem === 'Referral Registration Log Book') {
+    return <ReferralLogBook />;
+  }
+
+  if (activeItem === 'Examination Reports') {
+    return <ExaminationReports />;
   }
 
   if (activeItem === 'Patient Queue') {

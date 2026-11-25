@@ -40,6 +40,7 @@ import { CardRoomDashboard, CardRoomLayout, CardRoomUnavailable } from './compon
 import RegisterNewPatient, { CardRoomVisitRegistration } from './components/Card Room/RegisterNewPatient.jsx';
 import CardRoomPatients from './components/Card Room/CardRoomPatients.jsx';
 import CardRoomQueue from './components/Card Room/CardRoomQueue.jsx';
+import CardRoomIncomingDocuments from './components/Card Room/CardRoomIncomingDocuments.jsx';
 import CardRoomRecords from './components/Card Room/CardRoomRecords.jsx';
 import CardRoomReports from './components/Card Room/CardRoomReports.jsx';
 import CardRoomVisits from './components/Card Room/CardRoomVisits.jsx';
@@ -200,6 +201,7 @@ function App() {
           <Route path="patients" element={<CardRoomPatients />} />
           <Route path="register" element={<RegisterNewPatient />} />
           <Route path="queue" element={<CardRoomQueue />} />
+          <Route path="incoming-documents" element={<CardRoomIncomingDocuments />} />
           <Route path="records" element={<CardRoomRecords />} />
           <Route path="reports" element={<CardRoomReports />} />
           <Route path="visits" element={<CardRoomVisits />} />

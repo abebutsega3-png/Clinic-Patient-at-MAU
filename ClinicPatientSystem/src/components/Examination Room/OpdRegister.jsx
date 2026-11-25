@@ -22,10 +22,13 @@ const OpdRegister = () => {
     totalPatients: 0,
     newPatients: 0,
     repeatPatients: 0,
+    outpatientPatients: 0,
+    inpatientPatients: 0,
     referralPatients: 0
   });
   const [searchTerm, setSearchTerm] = useState('');
   const [serviceDate, setServiceDate] = useState(getClinicDateInput);
+  const [patientTypeTab, setPatientTypeTab] = useState('Outpatient');
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [loading, setLoading] = useState(Boolean(token));
 
@@ -53,6 +56,8 @@ const OpdRegister = () => {
             totalPatients: 0,
             newPatients: 0,
             repeatPatients: 0,
+            outpatientPatients: 0,
+            inpatientPatients: 0,
             referralPatients: 0,
           });
         }
@@ -82,13 +87,15 @@ const OpdRegister = () => {
     };
   }, [token]);
 
+  const displayedRecords = records.filter((record) => record.patientType === patientTypeTab);
+
   return (
     <div className="p-4 md:p-6 bg-slate-100 min-h-screen text-slate-800 print:bg-white print:p-0">
       {/* Header */}
       <div className="mb-5 rounded-lg border border-slate-300 bg-white px-5 py-4 text-center shadow-sm print:shadow-none">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Digital Register</p>
         <h1 className="mt-1 text-2xl font-black uppercase text-slate-950">
-          Out Patient Department (OPD) Register
+          OPD — {patientTypeTab} Register
         </h1>
         <p className="mt-1 text-sm font-semibold text-slate-600">
           Service Date: {serviceDate.split('-').reverse().join('/')}
@@ -96,7 +103,7 @@ const OpdRegister = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 print:hidden">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6 print:hidden">
         <div className="bg-blue-50/80 border border-blue-100 rounded-xl p-5 shadow-sm">
           <p className="text-sm font-semibold text-blue-700">Today&apos;s Patients</p>
           <p className="text-3xl font-bold text-blue-600 mt-2">{summary.totalPatients}</p>
@@ -115,6 +122,16 @@ const OpdRegister = () => {
         <div className="bg-amber-50/80 border border-amber-100 rounded-xl p-5 shadow-sm">
           <p className="text-sm font-semibold text-amber-700">Referral Patients</p>
           <p className="text-3xl font-bold text-amber-600 mt-2">{summary.referralPatients}</p>
+        </div>
+
+        <div className="bg-cyan-50/80 border border-cyan-100 rounded-xl p-5 shadow-sm">
+          <p className="text-sm font-semibold text-cyan-700">Outpatients</p>
+          <p className="text-3xl font-bold text-cyan-600 mt-2">{summary.outpatientPatients}</p>
+        </div>
+
+        <div className="bg-indigo-50/80 border border-indigo-100 rounded-xl p-5 shadow-sm">
+          <p className="text-sm font-semibold text-indigo-700">Inpatients</p>
+          <p className="text-3xl font-bold text-indigo-600 mt-2">{summary.inpatientPatients}</p>
         </div>
       </div>
 
@@ -148,10 +165,32 @@ const OpdRegister = () => {
         </p>
       )}
 
+      <div className="mb-4 flex gap-2 print:hidden" role="tablist" aria-label="Patient type">
+        {[
+          ['Outpatient', 'Outpatient Register', summary.outpatientPatients],
+          ['Inpatient', 'Inpatient Register', summary.inpatientPatients],
+        ].map(([type, label, count]) => (
+          <button
+            key={type}
+            type="button"
+            role="tab"
+            aria-selected={patientTypeTab === type}
+            onClick={() => setPatientTypeTab(type)}
+            className={`rounded-lg px-5 py-2.5 text-sm font-bold transition ${
+              patientTypeTab === type
+                ? 'bg-blue-700 text-white shadow-sm'
+                : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            {label} <span className="ml-1 rounded-full bg-white/20 px-2 py-0.5">{count}</span>
+          </button>
+        ))}
+      </div>
+
       {/* OPD Daily Register Table */}
       <div className="bg-white border-2 border-slate-900 shadow-sm overflow-hidden print:border-black">
         <div className="overflow-x-auto print:overflow-visible">
-          <table className="w-full min-w-[1660px] table-fixed border-collapse text-[11px] text-slate-950">
+          <table className="w-full min-w-[1740px] table-fixed border-collapse text-[11px] text-slate-950">
             <thead>
               <tr className="bg-slate-200 text-center font-bold uppercase">
                 <th rowSpan="2" className="w-10 border border-slate-900 px-1 py-2">No.</th>
@@ -159,6 +198,7 @@ const OpdRegister = () => {
                 <th colSpan="5" className="border border-slate-900 px-2 py-2">Identification</th>
                 <th colSpan="2" className="border border-slate-900 px-2 py-2">Diagnosis</th>
                 <th rowSpan="2" className="w-20 border border-slate-900 px-2 py-2">New / Repeat</th>
+                <th rowSpan="2" className="w-20 border border-slate-900 px-2 py-2">Inpatient / Outpatient</th>
                 <th colSpan="3" className="border border-slate-900 px-2 py-2">HIV / TB Screening</th>
                 <th rowSpan="2" className="w-24 border border-slate-900 px-2 py-2">Road Traffic Accident</th>
                 <th rowSpan="2" className="w-16 border border-slate-900 px-2 py-2">Referral</th>
@@ -183,18 +223,18 @@ const OpdRegister = () => {
             <tbody className="divide-y divide-slate-900">
               {loading ? (
                 <tr>
-                  <td colSpan="19" className="h-24 border-r border-slate-900 text-center text-slate-500">
+                  <td colSpan="20" className="h-24 border-r border-slate-900 text-center text-slate-500">
                     Loading OPD daily register...
                   </td>
                 </tr>
-              ) : records.length === 0 ? (
+              ) : displayedRecords.length === 0 ? (
                 <tr>
-                  <td colSpan="19" className="h-24 border-r border-slate-900 text-center text-slate-500">
-                    No OPD records found.
+                  <td colSpan="20" className="h-24 border-r border-slate-900 text-center text-slate-500">
+                    No inpatient or outpatient records found.
                   </td>
                 </tr>
               ) : (
-                records.map((item, index) => (
+                displayedRecords.map((item, index) => (
                   <tr key={item._id} className="h-12 hover:bg-blue-50/60 transition-colors">
                     <td className="border border-slate-900 px-1 text-center">{index + 1}</td>
                     <td className="border border-slate-900 px-2 text-center">{item.serviceDate || '-'}</td>
@@ -208,6 +248,7 @@ const OpdRegister = () => {
                     <td className="border border-slate-900 px-2">{item.diagnosis || '-'}</td>
                     <td className="border border-slate-900 px-2 text-center font-bold">{item.ncodDiagnosis || '-'}</td>
                     <td className="border border-slate-900 px-2 text-center">{item.visitType || '-'}</td>
+                    <td className="border border-slate-900 px-2 text-center font-bold">{item.patientType || '-'}</td>
                     <td className="border border-slate-900 px-2 text-center">{item.hivTbStatus || '-'}</td>
                     <td className="border border-slate-900 px-2 text-center">{item.screening || '-'}</td>
                     <td className="border border-slate-900 px-2 text-center font-bold">{item.testResults || '-'}</td>
@@ -271,6 +312,7 @@ const OpdRegister = () => {
               <p><span className="font-semibold">MRN:</span> {selectedRecord.mrn}</p>
               <p><span className="font-semibold">Diagnosis:</span> {selectedRecord.diagnosis}</p>
               <p><span className="font-semibold">Visit Type:</span> {selectedRecord.visitType}</p>
+              <p><span className="font-semibold">Patient Type:</span> {selectedRecord.patientType}</p>
               <p><span className="font-semibold">Age / Sex:</span> {selectedRecord.age} / {selectedRecord.sex}</p>
               <p><span className="font-semibold">Address:</span> {selectedRecord.address || '-'}</p>
               <p><span className="font-semibold">Screening:</span> {selectedRecord.screening}</p>

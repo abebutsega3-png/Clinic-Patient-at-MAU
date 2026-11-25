@@ -41,6 +41,9 @@ const mapVisitToOpdRecord = (visit) => {
     || [patient.dormBlock, patient.woreda, patient.kebele].filter(Boolean).join(', ');
   const rta = opd.rtaType || opd.accidentType;
   const visitType = String(visit.visitType || '').toLowerCase().startsWith('new') ? 'New' : 'Repeat';
+  const patientType = String(visit.examination?.prescriptionPatientType || 'outpatient').toLowerCase() === 'inpatient'
+    ? 'Inpatient'
+    : 'Outpatient';
 
   return {
     _id: String(visit._id),
@@ -58,6 +61,7 @@ const mapVisitToOpdRecord = (visit) => {
       `HIV: ${opd.hivTestResult || opd.hivResult || 'N/A'}`,
     ].join(' · '),
     visitType,
+    patientType,
     testResults: `${opd.tbDiagnosticCode || '—'} / ${opd.tbResultCode || opd.tbResult || '—'}`,
     hivTestOffered: Boolean(opd.hivTestOffered),
     hivTestPerformed: Boolean(opd.hivTestPerformed),
@@ -109,6 +113,8 @@ export const getOpdRegister = async (req, res) => {
       totalPatients: data.length,
       newPatients: data.filter((record) => record.visitType === 'New').length,
       repeatPatients: data.filter((record) => record.visitType === 'Repeat').length,
+      outpatientPatients: data.filter((record) => record.patientType === 'Outpatient').length,
+      inpatientPatients: data.filter((record) => record.patientType === 'Inpatient').length,
       referralPatients: data.filter((record) => record.referral !== 'No').length,
     };
     return res.status(200).json({ success: true, summary, data });

@@ -18,12 +18,18 @@ import {
   updateCardRoomQueue,
   submitCardRoomReport,
 } from '../controller/cardRoomController.js';
+import {
+  listCardRoomTransfers,
+  markCardRoomTransferReceived,
+} from '../controller/examinationCardRoomController.js';
 
 const router = Router();
 
 router.use(verifyUser);
 
 router.get('/dashboard', requireCardRoomAccess(), getCardRoomDashboard);
+router.get('/examination-transfers', requireCardRoomAccess(), listCardRoomTransfers);
+router.patch('/examination-transfers/:id/receive', requireCardRoomAccess(), markCardRoomTransferReceived);
 router.get('/patients', requireCardRoomAccess(), requireClinicPermissions('patients:view'), listCardRoomPatients);
 router.post('/patients', requireCardRoomAccess(), requireClinicPermissions('patients:create'), createCardRoomPatient);
 router.get('/patients/:id/clinical-records', requireClinicPermissions('patients:view', 'clinical_records:view'), getCardRoomPatientClinicalRecords);

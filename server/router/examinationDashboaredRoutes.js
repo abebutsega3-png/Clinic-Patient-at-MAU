@@ -21,6 +21,14 @@ import {
   updateLabProcessingStatus,
   updateExaminationQueue,
 } from '../controller/examinationdasboaredController.js';
+import {
+  getExaminationReports,
+  sendExaminationReportToClinicHead,
+} from '../controller/examinationReportsController.js';
+import {
+  listCardRoomTransfers,
+  sendToCardRoom,
+} from '../controller/examinationCardRoomController.js';
 
 const router = Router();
 
@@ -28,6 +36,10 @@ router.use(verifyUser);
 router.get('/dashboard', requireExaminationRoomAccess(), getExaminationDashboard);
 router.get('/lab-requests', requireExaminationOrLabAccess(), getExaminationLabRequests);
 router.get('/referrals', requireExaminationRoomAccess(), getExaminationReferrals);
+router.get('/reports', requireExaminationRoomAccess(), getExaminationReports);
+router.post('/reports/send-to-clinic-head', requireExaminationRoomAccess(), sendExaminationReportToClinicHead);
+router.post('/send-to-card-room', requireExaminationRoomAccess(), sendToCardRoom);
+router.get('/card-room-transfers', requireExaminationRoomAccess(), listCardRoomTransfers);
 router.get('/queue', requireExaminationRoomAccess(), listExaminationQueue);
 router.patch('/queue/:id', requireExaminationRoomAccess(), updateExaminationQueue);
 router.get('/patients', requireExaminationRoomAccess(), searchExaminationPatients);

@@ -46,7 +46,10 @@ const ExaminationRoom = () => {
 				isOpen={sidebarOpen}
 			/>
 			<div className="min-h-screen lg:pl-64">
-				<ExaminationRoomNavbar activeItem={activeItem === 'Patient Queue' ? 'Patient Queue' : activeItem} onToggleSidebar={() => setSidebarOpen((open) => !open)} />
+				<ExaminationRoomNavbar
+					onToggleSidebar={() => setSidebarOpen((open) => !open)}
+					onNavigate={setActiveItem}
+				/>
 				<main className={activeItem === 'Patient Queue' ? 'p-2 sm:p-3 lg:p-4' : 'p-4 sm:p-6 lg:p-8'}>
 					<ExaminationDashboard
 						activeItem={activeItem}
