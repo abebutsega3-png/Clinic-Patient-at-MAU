@@ -23,6 +23,7 @@ const initialSettings = {
     },
     gracePeriodMinutes: 15,
     lateAlertTriggerMinutes: 30,
+    attendanceCutoffMinutes: 120,
     minimumStaff: [],
     autoLockApprovedLeave: true
   },
@@ -207,6 +208,11 @@ const ClinicHeadSettings = () => {
             <label className="space-y-1.5 text-xs font-semibold text-slate-600">Late alert trigger
               <select aria-label="Late alert trigger in minutes" className={inputClass} value={settings.rosterRules.lateAlertTriggerMinutes} onChange={(event) => updateNested('rosterRules', 'lateAlertTriggerMinutes', Number(event.target.value))}>
                 {[15, 20, 30, 45, 60].map((minutes) => <option key={minutes} value={minutes}>{minutes} Minutes</option>)}
+              </select>
+            </label>
+            <label className="space-y-1.5 text-xs font-semibold text-slate-600">Absence cutoff after shift start
+              <select aria-label="Attendance absence cutoff in minutes" className={inputClass} value={settings.rosterRules.attendanceCutoffMinutes} onChange={(event) => updateNested('rosterRules', 'attendanceCutoffMinutes', Number(event.target.value))}>
+                {[0, 30, 60, 90, 120, 180, 240].map((minutes) => <option key={minutes} value={minutes}>{minutes} Minutes</option>)}
               </select>
             </label>
           </div>

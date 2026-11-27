@@ -23,6 +23,12 @@ const getClinicTime = (date = new Date()) => new Intl.DateTimeFormat('en-GB', {
   hourCycle: 'h23'
 }).format(date);
 
+const getPreviousClinicDate = (date) => {
+  const previous = new Date(`${date}T00:00:00.000Z`);
+  previous.setUTCDate(previous.getUTCDate() - 1);
+  return previous.toISOString().slice(0, 10);
+};
+
 const getCurrentStaff = async (user) => {
   const members = await findStaffMembers();
   return members.find((member) => (
@@ -35,22 +41,35 @@ const getShiftInfo = async (staffId, date) => {
   const [roster, operationalSettings] = await Promise.all([
     Roster.findOne({ staffId, date }).select('shift').lean(),
     ClinicOperationalSettings.findOne({ key: 'clinic' })
-      .select('rosterRules.shiftTimes rosterRules.gracePeriodMinutes workingHours.days')
+      .select('rosterRules.shiftTimes rosterRules.shiftDurations rosterRules.gracePeriodMinutes workingHours.days')
       .lean()
   ]);
   const gracePeriodMinutes = operationalSettings?.rosterRules?.gracePeriodMinutes ?? 15;
-  const shift = roster?.shift || 'off';
+  const shift = roster?.shift;
+  if (shift === 'off') {
+    return {
+      shift,
+      shiftLabel: 'No shift assigned',
+      isScheduled: false,
+      shiftStart: '',
+      shiftEnd: '',
+      expectedMinutes: 0,
+      gracePeriodMinutes
+    };
+  }
   if (['morning', 'afternoon', 'night'].includes(shift)) {
     return {
       shift,
       shiftLabel: `${shift} shift`,
       isScheduled: true,
       shiftStart: operationalSettings?.rosterRules?.shiftTimes?.[shift]?.start || '',
+      shiftEnd: operationalSettings?.rosterRules?.shiftTimes?.[shift]?.end || '',
+      expectedMinutes: (operationalSettings?.rosterRules?.shiftDurations?.[shift] || 8) * 60,
       gracePeriodMinutes
     };
   }
   if (shift === 'leave') {
-    return { shift, shiftLabel: 'On leave', isScheduled: false, shiftStart: '', gracePeriodMinutes };
+    return { shift, shiftLabel: 'On leave', isScheduled: false, shiftStart: '', shiftEnd: '', expectedMinutes: 0, gracePeriodMinutes };
   }
 
   const weekday = new Intl.DateTimeFormat('en-US', {
@@ -60,11 +79,18 @@ const getShiftInfo = async (staffId, date) => {
   const clinicDay = operationalSettings?.workingHours?.days?.find((day) => day.day === weekday);
   const isClinicOpen = clinicDay ? !clinicDay.closed : weekday !== 'Sunday';
   const shiftStart = clinicDay?.open || '08:00';
+  const shiftEnd = clinicDay?.close || '';
+  const startMinutes = Number(shiftStart.slice(0, 2)) * 60 + Number(shiftStart.slice(3, 5));
+  const endMinutes = shiftEnd
+    ? Number(shiftEnd.slice(0, 2)) * 60 + Number(shiftEnd.slice(3, 5))
+    : startMinutes + 8 * 60;
   return {
     shift: isClinicOpen ? 'clinic-hours' : 'off',
     shiftLabel: isClinicOpen ? 'Clinic hours' : 'No shift assigned',
     isScheduled: isClinicOpen,
     shiftStart,
+    shiftEnd,
+    expectedMinutes: Math.max(0, (endMinutes - startMinutes + 1440) % 1440),
     gracePeriodMinutes
   };
 };
@@ -121,7 +147,7 @@ export const getAttendanceSummary = async (req, res) => {
 
     const scheduledIds = new Set(scheduledStaff.map((staff) => String(staff._id)));
     const present = attendance.filter((entry) => (
-      scheduledIds.has(String(entry.staffId)) && ['present', 'late'].includes(entry.status)
+      scheduledIds.has(String(entry.staffId)) && ['present', 'late', 'half_day', 'early_leave'].includes(entry.status)
     )).length;
     const absent = attendance.filter((entry) => (
       scheduledIds.has(String(entry.staffId)) && entry.status === 'absent'
@@ -156,8 +182,14 @@ export const getMyAttendance = async (req, res) => {
     const range = getMonthRange(req.query.month, today);
     if (!range) return res.status(400).json({ success: false, message: 'Choose a valid attendance month.' });
 
-    const [attendance, roster, history] = await Promise.all([
+    const [todayAttendance, activeAttendance, roster, history] = await Promise.all([
       StaffAttendance.findOne({ staffId: staff._id, date: today }).lean(),
+      StaffAttendance.findOne({
+        staffId: staff._id,
+        date: { $gte: getPreviousClinicDate(today), $lte: today },
+        timeIn: { $exists: true, $ne: '' },
+        $or: [{ timeOut: '' }, { timeOut: { $exists: false } }]
+      }).sort({ date: -1 }).lean(),
       getShiftInfo(staff._id, today),
       StaffAttendance.find({ staffId: staff._id, date: { $gte: range.from, $lte: range.to } })
         .sort({ date: -1 })
@@ -174,9 +206,10 @@ export const getMyAttendance = async (req, res) => {
         shift: roster.shift,
         shiftLabel: roster.shiftLabel,
         isScheduled: roster.isScheduled && !isOnLeave && staff.status !== 'Inactive',
-        shiftStart: roster.shiftStart
+        shiftStart: roster.shiftStart,
+        shiftEnd: roster.shiftEnd
       },
-      attendance,
+      attendance: activeAttendance || todayAttendance,
       history
     });
   } catch (error) {
@@ -205,7 +238,7 @@ export const checkInToWork = async (req, res) => {
     if (!schedule.isScheduled) {
       return res.status(409).json({ success: false, message: 'You do not have a work shift assigned for today.' });
     }
-    if (existing?.timeIn) {
+    if (existing?.timeIn || existing?.checkInTime) {
       return res.status(409).json({ success: false, message: 'You are already checked in today.', attendance: existing });
     }
 
@@ -213,16 +246,19 @@ export const checkInToWork = async (req, res) => {
     const [inHour, inMinute] = timeIn.split(':').map(Number);
     const startAt = startHour * 60 + startMinute;
     let timeInAt = inHour * 60 + inMinute;
-    if (startAt >= 12 * 60 && timeInAt < 12 * 60) timeInAt += 24 * 60;
+    if (schedule.shift === 'night' && timeInAt < 12 * 60) timeInAt += 24 * 60;
     const status = timeInAt > startAt + schedule.gracePeriodMinutes ? 'late' : 'present';
     const attendanceFields = {
       staffName: staff.name,
       role: staff.roleLabel || staff.role || 'Staff',
       status,
+      lateArrival: status === 'late',
+      shift: schedule.shift,
       checkInTime: now,
       timeIn,
       timeOut: '',
       checkOutTime: null,
+      workingMinutes: 0,
       recordedBy: req.user._id
     };
 
@@ -281,12 +317,41 @@ export const checkOutFromWork = async (req, res) => {
     const now = new Date();
     const date = getClinicDate(now);
     const timeOut = getClinicTime(now);
-    const attendance = await StaffAttendance.findOne({ staffId: staff._id, date });
+    const attendance = await StaffAttendance.findOne({
+      staffId: staff._id,
+      date: { $gte: getPreviousClinicDate(date), $lte: date },
+      timeIn: { $exists: true, $ne: '' },
+      $or: [{ timeOut: '' }, { timeOut: { $exists: false } }]
+    }).sort({ date: -1 });
     if (!attendance?.timeIn) {
       return res.status(409).json({ success: false, message: 'Check in before checking out.' });
     }
     if (attendance.timeOut) {
       return res.status(409).json({ success: false, message: 'You are already checked out today.', attendance });
+    }
+    const checkInDate = attendance.checkInTime
+      ? new Date(attendance.checkInTime)
+      : new Date(`${attendance.date}T${attendance.timeIn}:00+03:00`);
+    const workingMinutes = Math.round((now.getTime() - checkInDate.getTime()) / 60000);
+    if (!Number.isFinite(workingMinutes) || workingMinutes <= 0) {
+      return res.status(409).json({ success: false, message: 'Check-out must occur after your check-in.' });
+    }
+    const schedule = await getShiftInfo(staff._id, attendance.date);
+    const outMinutes = timeOut.split(':').map(Number).reduce((hours, value, index) => (
+      index === 0 ? value * 60 : hours + value
+    ), 0);
+    const endMinutes = schedule.shiftEnd.split(':').map(Number).reduce((hours, value, index) => (
+      index === 0 ? value * 60 : hours + value
+    ), 0);
+    const isOvernight = schedule.shift === 'night';
+    const normalizedOutMinutes = isOvernight && outMinutes < 12 * 60 ? outMinutes + 1440 : outMinutes;
+    const normalizedEndMinutes = isOvernight && endMinutes < 12 * 60 ? endMinutes + 1440 : endMinutes;
+    let status = attendance.status;
+    const lateArrival = attendance.lateArrival || attendance.status === 'late';
+    if (workingMinutes <= schedule.expectedMinutes / 2) {
+      status = 'half_day';
+    } else if (schedule.shiftEnd && normalizedOutMinutes < normalizedEndMinutes) {
+      status = 'early_leave';
     }
 
     const checkoutFilter = {
@@ -295,7 +360,7 @@ export const checkOutFromWork = async (req, res) => {
       $or: [{ timeOut: '' }, { timeOut: { $exists: false } }]
     };
     const update = await StaffAttendance.updateOne(checkoutFilter, {
-      $set: { timeOut, checkOutTime: now }
+      $set: { timeOut, checkOutTime: now, workingMinutes, status, lateArrival }
     });
     if (update.modifiedCount !== 1) {
       const current = await StaffAttendance.findById(attendance._id).lean();
@@ -306,7 +371,7 @@ export const checkOutFromWork = async (req, res) => {
       });
     }
     const savedAttendance = await StaffAttendance.findById(attendance._id).lean();
-    emitAttendanceUpdate(req, staff._id, date);
+    emitAttendanceUpdate(req, staff._id, attendance.date);
 
     return res.status(200).json({
       success: true,

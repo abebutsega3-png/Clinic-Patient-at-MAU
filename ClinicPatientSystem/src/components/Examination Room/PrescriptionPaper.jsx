@@ -55,6 +55,7 @@ export default function PrescriptionPaper({
   onCheckMedicineStock,
   onSubmit,
   saving = false,
+  blankTemplate = false,
 }) {
   const patient = visit?.patientRecordId && typeof visit.patientRecordId === 'object'
     ? visit.patientRecordId
@@ -70,11 +71,12 @@ export default function PrescriptionPaper({
   const [diagnosis, setDiagnosis] = useState(visit?.diagnosis || '');
   const [patientType, setPatientType] = useState(examination.prescriptionPatientType || 'outpatient');
   const [stockChecks, setStockChecks] = useState({});
-  const patientName = visit?.name || visit?.patientName || patient.fullName || '—';
-  const cardNumber = visit?.cardNumber || patient.cardNumber || visit?.patientId || '—';
+  const emptyValue = blankTemplate ? '' : '—';
+  const patientName = visit?.name || visit?.patientName || patient.fullName || emptyValue;
+  const cardNumber = visit?.cardNumber || patient.cardNumber || visit?.patientId || emptyValue;
   const idNumber = visit?.governmentIdNumber || patient.governmentIdNumber
-    || visit?.studentId || patient.universityIdNumber || visit?.patientId || '—';
-  const phone = visit?.telephone || patient.phoneNumber || '—';
+    || visit?.studentId || patient.universityIdNumber || visit?.patientId || emptyValue;
+  const phone = visit?.telephone || patient.phoneNumber || emptyValue;
   const hasPrescription = prescriptions.some((item) => item.medicine?.trim());
   const status = examination.prescriptionStatus || (existingPrescriptions.length ? 'Pending' : '');
 
@@ -147,16 +149,16 @@ export default function PrescriptionPaper({
         <div className="mt-3 space-y-1.5 text-[10px] leading-relaxed sm:text-[11px]">
           <p><strong>Patient’s Full Name:</strong> <span className="inline-block min-w-48 border-b border-slate-500">{patientName}</span></p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
-            <p><strong>Sex:</strong> {visit?.sex || patient.sex || '—'}</p>
-            <p><strong>Age:</strong> {visit?.age ?? patient.age ?? '—'}</p>
-            <label className="flex items-center gap-1"><strong>Weight:</strong>{onSubmit ? <><input aria-label="Weight in kilograms" value={weight} onChange={(event) => setWeight(event.target.value)} className="w-12 border-b border-slate-500 px-1 py-0.5" /><span>kg</span></> : `${weight ? ` ${weight} kg` : ' —'}`}</label>
+            <p><strong>Sex:</strong> {visit?.sex || patient.sex || emptyValue}</p>
+            <p><strong>Age:</strong> {visit?.age ?? patient.age ?? emptyValue}</p>
+            <label className="flex items-center gap-1"><strong>Weight:</strong>{onSubmit ? <><input aria-label="Weight in kilograms" value={weight} onChange={(event) => setWeight(event.target.value)} className="w-12 border-b border-slate-500 px-1 py-0.5" /><span>kg</span></> : `${weight ? ` ${weight} kg` : blankTemplate ? '' : ' —'}`}</label>
             <p><strong>Card No.:</strong> {cardNumber}</p>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
-            <p><strong>Region:</strong> {visit?.region || patient.region || '—'}</p>
-            <p><strong>Town:</strong> {visit?.town || patient.town || '—'}</p>
-            <p><strong>Woreda:</strong> {visit?.woreda || patient.woreda || '—'}</p>
-            <p><strong>Kebele:</strong> {visit?.kebele || patient.kebele || '—'}</p>
+            <p><strong>Region:</strong> {visit?.region || patient.region || emptyValue}</p>
+            <p><strong>Town:</strong> {visit?.town || patient.town || emptyValue}</p>
+            <p><strong>Woreda:</strong> {visit?.woreda || patient.woreda || emptyValue}</p>
+            <p><strong>Kebele:</strong> {visit?.kebele || patient.kebele || emptyValue}</p>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-[1fr_1.2fr_1.5fr]">
             <p><strong>ID No.:</strong> {idNumber}</p>
@@ -173,7 +175,7 @@ export default function PrescriptionPaper({
           </div>
           <label className="flex items-end gap-1"><strong className="shrink-0">Diagnosis:</strong> {onSubmit
             ? <input value={diagnosis} onChange={(event) => setDiagnosis(event.target.value)} maxLength={500} className="min-w-0 flex-1 border-b border-slate-500 px-1 py-0.5" />
-            : <span className="min-w-0 flex-1 border-b border-slate-500">{diagnosis || '—'}</span>}</label>
+            : <span className="min-w-0 flex-1 border-b border-slate-500">{diagnosis || emptyValue}</span>}</label>
         </div>
 
         {status && <p className="screen-only mt-3 text-xs font-semibold text-slate-700">Prescription status: <span className="rounded bg-blue-50 px-2 py-1 text-blue-800">{status}</span></p>}
@@ -291,7 +293,7 @@ export default function PrescriptionPaper({
                       </div>
                     ) : (
                       <span className="whitespace-pre-wrap">
-                        {[item.medicine, item.strength, item.form, item.dose || item.dosage, item.frequency, item.duration, [item.quantity, item.quantityUnit].filter(Boolean).join(' '), item.instructions].filter(Boolean).join(' · ') || '—'}
+                        {[item.medicine, item.strength, item.form, item.dose || item.dosage, item.frequency, item.duration, [item.quantity, item.quantityUnit].filter(Boolean).join(' '), item.instructions].filter(Boolean).join(' · ') || emptyValue}
                       </span>
                     )}
                   </td>
@@ -327,22 +329,22 @@ export default function PrescriptionPaper({
             <p>Qualification: <span className="inline-block min-w-16 border-b border-slate-500">{prescriber.qualification || doctor?.qualification || ''}</span></p>
             <p>Registration: <span className="inline-block min-w-16 border-b border-slate-500">{prescriber.registration || doctor?.registrationNo || doctor?.registration || doctor?.licenseNumber || ''}</span></p>
             <p>Signature: <span className="inline-block min-w-16 border-b border-slate-500">{prescriber.signedAt ? 'Digitally signed' : hasPrescription ? 'Signature on submission' : ''}</span></p>
-            <p>Date: <span className="inline-block min-w-16 border-b border-slate-500">{formatDate(prescriber.signedAt || visit?.visitDate)}</span></p>
+            <p>Date: <span className="inline-block min-w-16 border-b border-slate-500">{blankTemplate && !visit?.visitDate ? '' : formatDate(prescriber.signedAt || visit?.visitDate)}</span></p>
           </div>
           <div className="space-y-1">
             <strong className="underline">Evaluator’s (Pharmacist / Dispenser)</strong>
             <p>Name: <span className="inline-block min-w-16 border-b border-slate-500">{examination.prescriptionEvaluatedBy || ''}</span></p>
             <p>Signature: <span className="inline-block min-w-16 border-b border-slate-500" /></p>
-            <p>Date: <span className="inline-block min-w-16 border-b border-slate-500">{formatDate(examination.prescriptionEvaluatedAt)}</span></p>
+            <p>Date: <span className="inline-block min-w-16 border-b border-slate-500">{blankTemplate ? '' : formatDate(examination.prescriptionEvaluatedAt)}</span></p>
           </div>
           <div className="space-y-1">
             <strong className="underline">Dispenser’s</strong>
             <p>Name: <span className="inline-block min-w-16 border-b border-slate-500">{examination.prescriptionDispensedBy || ''}</span></p>
             <p>Signature: <span className="inline-block min-w-16 border-b border-slate-500" /></p>
-            <p>Date: <span className="inline-block min-w-16 border-b border-slate-500">{formatDate(examination.prescriptionDispensedAt)}</span></p>
+            <p>Date: <span className="inline-block min-w-16 border-b border-slate-500">{blankTemplate ? '' : formatDate(examination.prescriptionDispensedAt)}</span></p>
           </div>
         </footer>
-        {!hasPrescription && !onSubmit && <p className="mt-4 text-center text-xs text-slate-500">{visit ? 'No medicines are recorded for this visit.' : 'No patient is currently in consultation.'}</p>}
+        {!hasPrescription && !onSubmit && !blankTemplate && <p className="mt-4 text-center text-xs text-slate-500">{visit ? 'No medicines are recorded for this visit.' : 'No patient is currently in consultation.'}</p>}
       </form>
 
       <style>{`

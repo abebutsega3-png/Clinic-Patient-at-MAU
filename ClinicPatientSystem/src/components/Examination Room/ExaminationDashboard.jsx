@@ -22,6 +22,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import MyAttendance from '../Dispensary Room/MyAttendance.jsx';
 import StaffAnnouncements from '../ClinicStudentHead/StaffAnnouncements.jsx';
 import PatientExamination from './PatientExamination.jsx';
 import ExaminationPatientQueue from './ExaminationPatientQueue.jsx';
@@ -778,6 +779,10 @@ function ExaminationDashboardContent({ activeItem = 'Dashboard', onNavigate, onQ
     return <OpdRegister />;
   }
 
+  if (activeItem === 'My Attendance') {
+    return <MyAttendance />;
+  }
+
   if (activeItem === 'Send to Card Room') {
     return <SendToCardRoom />;
   }
@@ -1027,46 +1032,31 @@ function ExaminationDashboardContent({ activeItem = 'Dashboard', onNavigate, onQ
             </div>
             <button type="button" onClick={() => onNavigate?.('Patient Queue')} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800">Open Patient Queue</button>
           </div>
-          <section aria-labelledby="prescription-workflow-title" className="rounded-lg border border-sky-200 bg-sky-50 p-4">
-            <h2 id="prescription-workflow-title" className="font-bold text-sky-950">የመድኃኒት ማዘዣ እና ማደል ሂደት</h2>
-            <ol className="mt-3 grid gap-3 md:grid-cols-3">
-              <li className="rounded-md border border-sky-100 bg-white p-3">
-                <h3 className="text-sm font-bold text-slate-900">1. Pending Prescriptions Queue</h3>
-                <p className="mt-1 text-xs leading-relaxed text-slate-600">ዶክተሩ ከታካሚው ምርመራ በኋላ ማዘዣውን ሲያስገባ ወደ ፋርማሲ ወረፋ ይላካል። ፋርማሲስቱ የታካሚውን ስም፣ MRN፣ Student ID፣ መድኃኒቶችን፣ መጠንና ቆይታ ይመለከታል፤ አለርጂ ካለም የጥንቃቄ ማስጠንቀቂያ ይታያል።</p>
-              </li>
-              <li className="rounded-md border border-sky-100 bg-white p-3">
-                <h3 className="text-sm font-bold text-slate-900">2. Stock Availability Check</h3>
-                <p className="mt-1 text-xs leading-relaxed text-slate-600">ትዕዛዙ ሲከፈት የመድኃኒቱ ክምችት ይመረመራል። ከክምችት ውጭ ከሆነ <strong>Out of stock</strong> የሚል ማሳወቂያ ይታያል።</p>
-              </li>
-              <li className="rounded-md border border-sky-100 bg-white p-3">
-                <h3 className="text-sm font-bold text-slate-900">3. Dispensing &amp; History</h3>
-                <p className="mt-1 text-xs leading-relaxed text-slate-600">ፋርማሲስቱ ትዕዛዙን ካረጋገጠ በኋላ መድኃኒቱን ይሰጣል። ሁኔታው <strong>Pending</strong> ከሚለው ወደ <strong>Dispensed</strong> ይቀየራል፣ እና ሂደቱ በታካሚው የሕክምና ታሪክ ውስጥ ይመዘገባል።</p>
-              </li>
-            </ol>
-          </section>
           {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
           {notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
           {loading && !dashboard && <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">Loading prescription records…</p>}
-          {!activePrescriptionVisit ? (
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-amber-200 bg-amber-50 p-5">
+          {!activePrescriptionVisit && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
               <div>
                 <h2 className="font-bold text-amber-950">Call a patient into Current Consultation before submitting a request.</h2>
-                <p className="mt-1 text-sm text-amber-900">Select a patient from the Examination Room queue to create a prescription.</p>
+                <p className="mt-1 text-sm text-amber-900">The prescription paper is ready to preview and print. Call a patient from the Examination Room queue to fill and submit it.</p>
               </div>
-              <button type="button" onClick={() => onNavigate?.('Patient Queue')} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800">Open Patient Queue</button>
             </div>
-          ) : (
-            <div className="grid min-w-0 items-start gap-4 2xl:grid-cols-[minmax(0,2.2fr)_minmax(280px,0.8fr)]">
-              <PrescriptionPaper
-                key={`${activePrescriptionVisit._id || activePrescriptionVisit.visitId}:${JSON.stringify(activePrescriptionVisit.examination?.prescriptions || [])}:${activePrescriptionVisit.examination?.vitals?.weight || ''}:${activePrescriptionVisit.diagnosis || ''}:${activePrescriptionVisit.examination?.prescriptionPatientType || ''}`}
-                visit={activePrescriptionVisit}
-                doctor={user}
-                onCheckMedicineStock={handleCheckMedicineStock}
-                onSubmit={!['Dispensed', 'Partially dispensed', 'Cancelled'].includes(activePrescriptionVisit.examination?.prescriptionStatus)
-                  ? handleSubmitPrescription
-                  : undefined}
-                saving={savingVisit}
-              />
+          )}
+          <div className={`grid min-w-0 items-start gap-4 ${activePrescriptionVisit ? '2xl:grid-cols-[minmax(0,2.2fr)_minmax(280px,0.8fr)]' : ''}`}>
+            <PrescriptionPaper
+              key={`${activePrescriptionVisit?._id || activePrescriptionVisit?.visitId || 'blank'}:${JSON.stringify(activePrescriptionVisit?.examination?.prescriptions || [])}:${activePrescriptionVisit?.examination?.vitals?.weight || ''}:${activePrescriptionVisit?.diagnosis || ''}:${activePrescriptionVisit?.examination?.prescriptionPatientType || ''}`}
+              visit={activePrescriptionVisit || {}}
+              doctor={user}
+              blankTemplate={!activePrescriptionVisit}
+              onCheckMedicineStock={activePrescriptionVisit ? handleCheckMedicineStock : undefined}
+              onSubmit={activePrescriptionVisit
+                && !['Dispensed', 'Partially dispensed', 'Cancelled'].includes(activePrescriptionVisit.examination?.prescriptionStatus)
+                ? handleSubmitPrescription
+                : undefined}
+              saving={savingVisit}
+            />
+            {activePrescriptionVisit && (
               <aside className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
                 <div>
                   <h2 className="font-bold text-slate-900">Previous prescriptions</h2>
@@ -1089,8 +1079,8 @@ function ExaminationDashboardContent({ activeItem = 'Dashboard', onNavigate, onQ
                 ))}
                 {!prescriptionHistory.length && <p className="rounded bg-slate-50 p-3 text-xs text-slate-500">No previous prescriptions are recorded for this patient.</p>}
               </aside>
-            </div>
-          )}
+            )}
+          </div>
           {selectedPrescriptionHistory && <PrescriptionPaper
             key={String(selectedPrescriptionHistory._id)}
             visit={selectedPrescriptionHistory}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ChevronDown, Mail, Menu, Phone, ShieldPlus, UserRound, X } from 'lucide-react';
 import { FaFacebookF, FaXTwitter } from 'react-icons/fa6';
+import { useAuth } from '../context/AuthContext.jsx';
 
 const departments = [
   { label: 'Drug Store', id: 'department-drug-store' },
@@ -27,6 +28,7 @@ const socialLinks = [
 ];
 
 export default function Navbar() {
+  const { user, token } = useAuth();
   const { pathname, hash } = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [departmentsOpen, setDepartmentsOpen] = useState(false);
@@ -83,10 +85,15 @@ export default function Navbar() {
             </a>
           </div>
           <div className="ml-auto flex items-center gap-4">
-            <Link to="/login" className="inline-flex items-center gap-1.5 whitespace-nowrap hover:text-sky-100">
+            {user && token ? (
+              <Link to="/my-attendance" className="inline-flex items-center gap-1.5 whitespace-nowrap hover:text-sky-100">
+                <UserRound size={15} aria-hidden="true" />
+                <span>My Attendance</span>
+              </Link>
+            ) : <Link to="/login" className="inline-flex items-center gap-1.5 whitespace-nowrap hover:text-sky-100">
               <UserRound size={15} aria-hidden="true" />
               <span>Staff Login</span>
-            </Link>
+            </Link>}
             <div className="hidden items-center gap-3 sm:flex">
               {socialLinks.map(({ label, href, icon: Icon }) => (
                 <a

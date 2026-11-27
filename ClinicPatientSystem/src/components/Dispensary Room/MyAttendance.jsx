@@ -36,8 +36,15 @@ const formatDate = (value) => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
 };
 
+const formatWorkingHours = (minutes) => {
+  const total = Number(minutes) || 0;
+  return total ? `${Math.floor(total / 60)}h ${total % 60}m` : '—';
+};
+
 const statusLabel = (status) => {
   if (!status || status === 'unrecorded') return 'Not checked in';
+  if (status === 'half_day') return 'Half day';
+  if (status === 'early_leave') return 'Early leave';
   return status.charAt(0).toUpperCase() + status.slice(1);
 };
 
@@ -168,7 +175,7 @@ export default function MyAttendance() {
                   className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   <LogIn size={17} aria-hidden="true" />
-                  {busy === 'check-in' ? 'Checking in…' : 'Mark Present / Check In'}
+                  {busy === 'check-in' ? 'Checking in…' : 'Check In'}
                 </button>
               ) : !hasCheckedOut ? (
                 <button
@@ -218,6 +225,7 @@ export default function MyAttendance() {
                 <th className="p-3 sm:px-5">Date</th>
                 <th className="p-3 sm:px-5">Check-in</th>
                 <th className="p-3 sm:px-5">Check-out</th>
+                <th className="p-3 sm:px-5">Working hours</th>
                 <th className="p-3 sm:px-5">Status</th>
               </tr>
             </thead>
@@ -227,6 +235,7 @@ export default function MyAttendance() {
                   <td className="p-3 font-medium text-slate-800 sm:px-5">{formatDate(entry.date)}</td>
                   <td className="p-3 text-slate-600 sm:px-5">{formatTime(entry.checkInTime || entry.timeIn)}</td>
                   <td className="p-3 text-slate-600 sm:px-5">{formatTime(entry.checkOutTime || entry.timeOut)}</td>
+                  <td className="p-3 text-slate-600 sm:px-5">{formatWorkingHours(entry.workingMinutes)}</td>
                   <td className="p-3 sm:px-5">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                       entry.status === 'late' ? 'bg-amber-100 text-amber-800'
@@ -236,7 +245,7 @@ export default function MyAttendance() {
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan="4" className="p-8 text-center text-sm text-slate-500">No attendance records for this month.</td></tr>
+                <tr><td colSpan="5" className="p-8 text-center text-sm text-slate-500">No attendance records for this month.</td></tr>
               )}
             </tbody>
           </table>

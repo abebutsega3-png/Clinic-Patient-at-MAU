@@ -37,6 +37,7 @@ const defaultSettings = () => ({
     },
     gracePeriodMinutes: 15,
     lateAlertTriggerMinutes: 30,
+    attendanceCutoffMinutes: 120,
     minimumStaff: [],
     autoLockApprovedLeave: true
   },
@@ -91,6 +92,7 @@ const validateSettings = (input) => {
     ))
     || !finiteNumber(rosterRules.gracePeriodMinutes, 0, 240)
     || !finiteNumber(rosterRules.lateAlertTriggerMinutes, 0, 1440)
+    || !finiteNumber(rosterRules.attendanceCutoffMinutes, 0, 1440)
     || typeof rosterRules.autoLockApprovedLeave !== 'boolean'
     || !Array.isArray(rosterRules.minimumStaff)
     || rosterRules.minimumStaff.some((rule) => (
@@ -160,6 +162,7 @@ export const updateClinicOperationalSettings = async (req, res) => {
       }])),
       gracePeriodMinutes: rosterRules.gracePeriodMinutes,
       lateAlertTriggerMinutes: rosterRules.lateAlertTriggerMinutes,
+      attendanceCutoffMinutes: rosterRules.attendanceCutoffMinutes,
       minimumStaff: rosterRules.minimumStaff.map(({ department, shift, count }) => ({ department: department.trim(), shift, count })),
       autoLockApprovedLeave: rosterRules.autoLockApprovedLeave
     },

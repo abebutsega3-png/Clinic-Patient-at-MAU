@@ -58,6 +58,7 @@ const clinicOperationalSettingsSchema = new mongoose.Schema({
     },
     gracePeriodMinutes: { type: Number, default: 15, min: 0, max: 240 },
     lateAlertTriggerMinutes: { type: Number, default: 30, min: 0, max: 1440 },
+    attendanceCutoffMinutes: { type: Number, default: 120, min: 0, max: 1440 },
     minimumStaff: {
       type: [{
         department: { type: String, required: true, trim: true },

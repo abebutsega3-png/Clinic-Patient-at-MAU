@@ -40,7 +40,7 @@ function LabRequestForm({
   const [clinicalNote, setClinicalNote] = useState('');
   const [urgent, setUrgent] = useState(false);
   const [selectedVisitId, setSelectedVisitId] = useState('');
-  const [activeLabTab, setActiveLabTab] = useState(initialTab);
+  const [activeResultsTab, setActiveResultsTab] = useState('results');
   const [resultDraftsByVisit, setResultDraftsByVisit] = useState({});
   const [reportDatesByVisit, setReportDatesByVisit] = useState({});
   const [technicianNotesByVisit, setTechnicianNotesByVisit] = useState({});
@@ -210,38 +210,36 @@ function LabRequestForm({
       {notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
 
       <section className="flex w-full min-w-0 flex-col gap-5">
-        <div className="flex border-b border-slate-200" role="tablist" aria-label="Laboratory requests and results">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeLabTab === 'form'}
-            onClick={() => setActiveLabTab('form')}
-            className={`border-b-2 px-4 py-3 text-sm font-semibold transition ${activeLabTab === 'form' ? 'border-blue-700 text-blue-800' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-          >
-            Request Form
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeLabTab === 'requests'}
-            onClick={() => setActiveLabTab('requests')}
-            className={`border-b-2 px-4 py-3 text-sm font-semibold transition ${activeLabTab === 'requests' ? 'border-blue-700 text-blue-800' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-          >
-            Current Requests <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs">{requestGroups.length}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeLabTab === 'results'}
-            onClick={() => setActiveLabTab('results')}
-            className={`border-b-2 px-4 py-3 text-sm font-semibold transition ${activeLabTab === 'results' ? 'border-blue-700 text-blue-800' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-          >
-            Lab Result
-          </button>
-        </div>
-
+        {initialTab === 'results' ? (
+          <div className="flex border-b border-slate-200" role="tablist" aria-label="Laboratory results">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeResultsTab === 'requests'}
+              onClick={() => setActiveResultsTab('requests')}
+              className={`border-b-2 px-4 py-3 text-sm font-semibold transition ${activeResultsTab === 'requests' ? 'border-blue-700 text-blue-800' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            >
+              Current Requests <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs">{requestGroups.length}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeResultsTab === 'results'}
+              onClick={() => setActiveResultsTab('results')}
+              className={`border-b-2 px-4 py-3 text-sm font-semibold transition ${activeResultsTab === 'results' ? 'border-blue-700 text-blue-800' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            >
+              Lab Result
+            </button>
+          </div>
+        ) : (
+          <div className="flex border-b border-slate-200">
+            <span className="border-b-2 border-blue-700 px-4 py-3 text-sm font-semibold text-blue-800">
+              Request Form
+            </span>
+          </div>
+        )}
         <div className="min-w-0 space-y-3">
-          {activeLabTab === 'form' && <>
+          {initialTab !== 'results' && <>
           <form onSubmit={submitRequest} className="space-y-3">
             {!patient && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
@@ -393,7 +391,7 @@ function LabRequestForm({
           </form>
           </>}
 
-          {activeLabTab === 'requests' && <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          {initialTab === 'results' && activeResultsTab === 'requests' && <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="flex min-h-12 items-center justify-between gap-2 bg-[#0b4e9a] px-4 text-white">
               <h2 className="flex items-center gap-2 text-base font-bold"><FlaskConical size={18} /> Current Requests</h2>
               <span className="rounded-full bg-white/15 px-2.5 py-1 text-xs font-semibold">{requestGroups.length}</span>
@@ -407,7 +405,7 @@ function LabRequestForm({
                     type="button"
                     onClick={() => {
                       setSelectedVisitId(request.visitId);
-                      setActiveLabTab('results');
+                      setActiveResultsTab('results');
                     }}
                     aria-pressed={request.visitId === selectedRequest?.visitId}
                     className={`w-full px-3 py-2.5 text-left hover:bg-blue-50 ${request.visitId === selectedRequest?.visitId ? 'bg-blue-50' : ''}`}
@@ -427,7 +425,7 @@ function LabRequestForm({
           </section>}
         </div>
 
-        {activeLabTab === 'results' && <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        {initialTab === 'results' && activeResultsTab === 'results' && <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex min-h-11 items-center justify-between gap-3 bg-[#0b4e9a] px-4 text-white">
             <h2 className="flex items-center gap-2 text-sm font-bold"><FlaskConical size={18} /> Lab Result</h2>
             {selectedRequest && <span className="rounded bg-white/15 px-2 py-1 text-xs font-semibold">{selectedRequest.labRequestNumber || 'Lab Request'}</span>}

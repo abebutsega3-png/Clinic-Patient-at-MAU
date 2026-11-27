@@ -14,6 +14,7 @@ import {
   LogOut,
   ChevronDown,
   Settings,
+  Clock3,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -33,6 +34,7 @@ export default function Sidebar({ activeItem, setActiveItem, isOpen = false, que
     { name: 'OPD Register', label: 'OPD Register', icon: ClipboardList },
     { name: 'Send to Card Room', label: 'Send to Card Room', icon: ClipboardList },
     { name: 'Examination Reports', label: 'Examination Reports', icon: BarChart3 },
+    { name: 'My Attendance', label: 'My Attendance', icon: Clock3 },
   ];
 
   return (

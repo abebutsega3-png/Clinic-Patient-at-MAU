@@ -35,6 +35,7 @@ import { ClinicHeadChangePassword, ClinicHeadProfile } from './components/Clinic
 import StaffAnnouncements from './components/ClinicStudentHead/StaffAnnouncements.jsx';
 import ClinicHeadAttendance from './components/ClinicStudentHead/ClinicHeadAttendance.jsx';
 import ClinicHeadDepartmentReports from './components/ClinicStudentHead/ClinicHeadDepartmentReports.jsx';
+import ClinicHeadFeatureUnavailable from './components/ClinicStudentHead/ClinicHeadFeatureUnavailable.jsx';
 import DepartmentReportSubmission from './components/DepartmentReports/DepartmentReportSubmission.jsx';
 import { CardRoomDashboard, CardRoomLayout, CardRoomUnavailable } from './components/Card Room/CardRoomModule.jsx';
 import RegisterNewPatient, { CardRoomVisitRegistration } from './components/Card Room/RegisterNewPatient.jsx';
@@ -85,6 +86,26 @@ function DispensaryLayout() {
           <Outlet />
         </main>
       </div>
+    </div>
+  );
+}
+
+function MyAttendancePage() {
+  const { user, token } = useAuth();
+  const location = useLocation();
+  if (!user || !token) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+  if (user.mustChangePassword) {
+    return <Navigate to="/change-password" replace />;
+  }
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <Navbar />
+      <main className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
+        <MyAttendance />
+      </main>
+      <Footer />
     </div>
   );
 }
@@ -162,6 +183,7 @@ function App() {
         <Route path="/departments" element={<Navigate to="/services" replace />} />
         <Route path="/appointments" element={<><Navbar /><AppointmentSection /><Footer /></>} />
         <Route path="/login" element={<div className="flex min-h-screen flex-col"><Navbar /><LoginPage /><Footer /></div>} />
+        <Route path="/my-attendance" element={<MyAttendancePage />} />
         <Route path="/purchase-requests" element={<DepartmentPurchaseRequests />} />
         <Route path="/announcements" element={<StaffAnnouncements />} />
         <Route path="/department-reports" element={<DepartmentReportSubmission />} />
@@ -185,10 +207,35 @@ function App() {
         <Route path="/clinic-head" element={<ClinicHeadLayout />}>
           <Route index element={<ClinicHeadDashboard />} />
           <Route path="approvals" element={<ApprovalsAndRequests />} />
-          <Route path="staff" element={<DutyRoster />} />
+          <Route path="staff" element={<DutyRoster key="staff" initialView="staff" />} />
+          <Route path="shift-schedule" element={<DutyRoster key="shift-schedule" initialView="roster" />} />
           <Route path="inventory" element={<PharmacyAndInventory />} />
-          <Route path="attendance" element={<ClinicHeadAttendance />} />
+          <Route path="attendance" element={<Navigate to="/clinic-head/attendance/dashboard" replace />} />
+          <Route path="attendance/dashboard" element={<ClinicHeadAttendance />} />
+          <Route path="attendance/daily" element={<ClinicHeadAttendance />} />
+          <Route path="attendance/records" element={<ClinicHeadAttendance />} />
+          <Route path="attendance/corrections" element={<ClinicHeadAttendance />} />
+          <Route path="attendance/history" element={<ClinicHeadAttendance />} />
+          <Route path="attendance/monthly-report" element={<ClinicHeadAttendance />} />
           <Route path="department-reports" element={<ClinicHeadDepartmentReports />} />
+          <Route
+            path="feedback-complaints"
+            element={(
+              <ClinicHeadFeatureUnavailable
+                title="Feedback & Complaints"
+                message="The Clinic Head feedback and complaints feature is not configured in this project yet."
+              />
+            )}
+          />
+          <Route
+            path="audit-log"
+            element={(
+              <ClinicHeadFeatureUnavailable
+                title="Audit Log"
+                message="Audit logs are currently available through the System Admin route only."
+              />
+            )}
+          />
           <Route path="store-requisitions" element={<StoreRequisition />} />
           <Route path="reports" element={<ReportsAndAnalytics />} />
           <Route path="announcements" element={<StaffAnnouncements />} />
@@ -198,6 +245,7 @@ function App() {
         </Route>
         <Route path="/card-room" element={<CardRoomLayout />}>
           <Route index element={<CardRoomDashboard />} />
+          <Route path="attendance" element={<MyAttendance />} />
           <Route path="patients" element={<CardRoomPatients />} />
           <Route path="register" element={<RegisterNewPatient />} />
           <Route path="queue" element={<CardRoomQueue />} />

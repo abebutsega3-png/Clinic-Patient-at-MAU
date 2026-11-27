@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { 
   ChevronLeft, 
   ChevronRight, 
-  Save, 
+  Save,
   Copy,
   AlertTriangle, 
   Calendar, 
@@ -801,7 +802,6 @@ const TodayAttendance = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [savedMessage, setSavedMessage] = useState('');
   const [replacementMessage, setReplacementMessage] = useState('');
   const [replacementSelection, setReplacementSelection] = useState({});
   const [today, setToday] = useState('');
@@ -848,17 +848,6 @@ const TodayAttendance = () => {
     };
   }, [loadAttendance, selectedDate, today, token]);
 
-  const updateRecord = (staffId, field, value) => {
-    setStaff((current) => current.map((member) => (
-      member._id === staffId
-        ? field === 'attendanceStatus' && ['absent', 'unrecorded'].includes(value)
-          ? { ...member, attendanceStatus: value, timeIn: '', timeOut: '', attendanceNote: value === 'unrecorded' ? '' : member.attendanceNote }
-          : { ...member, [field]: value }
-        : member
-    )));
-    setSavedMessage('');
-  };
-
   const visibleStaff = staff.filter((member) => (
     (!search || member.name.toLowerCase().includes(search.trim().toLowerCase()))
     && (scheduleFilter === 'all'
@@ -892,32 +881,6 @@ const TodayAttendance = () => {
     }
   };
 
-  const saveAttendance = async () => {
-    if (!isSelectedDateToday) return;
-    setSaving(true);
-    setError('');
-    setSavedMessage('');
-    try {
-      const attendanceUpdates = staff
-        .filter((member) => member.isScheduled && ['present', 'absent', 'late', 'unrecorded'].includes(member.attendanceStatus))
-        .map((member) => ({
-          staffId: member._id,
-          status: member.attendanceStatus,
-          timeIn: member.timeIn || '',
-          timeOut: member.timeOut || '',
-          note: member.attendanceNote || ''
-        }));
-      const { data } = await axios.post('/api/roster/attendance/today', { attendanceUpdates }, authHeaders(token));
-      setSavedMessage([data.message || `Attendance saved for ${data.savedCount || 0} staff members.`, data.warning].filter(Boolean).join(' '));
-      await loadAttendance();
-    } catch (saveError) {
-      console.error('Failed to save attendance:', saveError);
-      setError(saveError.response?.data?.message || 'Unable to save attendance.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const counts = staff.reduce((result, member) => {
     if (!member.isScheduled && member.attendanceStatus !== 'on_leave') return result;
     const key = member.attendanceStatus || 'unrecorded';
@@ -931,9 +894,9 @@ const TodayAttendance = () => {
         <div>
           <h2 className="text-lg font-bold text-slate-800">{isSelectedDateToday ? 'Today’s Attendance' : 'Attendance History'}</h2>
           <p className="text-sm text-slate-500">{selectedDate || today || 'Today'} · Attendance and check-in records for active staff.</p>
-          <p className="mt-1 text-xs text-slate-400">Staff check-ins appear live. Clinic Head can record or correct attendance for today; past dates are read-only.</p>
+          <p className="mt-1 text-xs text-slate-400">Staff check-ins appear live. Attendance records are read-only; corrections must be reviewed through the Staff Attendance module.</p>
         </div>
-        {isSelectedDateToday && <button onClick={saveAttendance} disabled={saving || loading} className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Save size={16} />{saving ? 'Saving...' : 'Save Attendance'}</button>}
+        <Link to="/clinic-head/attendance/daily" className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white">Open Staff Attendance</Link>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
         {[
@@ -964,7 +927,6 @@ const TodayAttendance = () => {
         </select>
       </div>
       {error && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
-      {savedMessage && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{savedMessage}</div>}
       {replacementMessage && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{replacementMessage}</div>}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         {loading ? <p className="p-8 text-center text-sm text-slate-500">Loading attendance...</p> : (
@@ -991,26 +953,15 @@ const TodayAttendance = () => {
                       ? <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">On Leave</span>
                       : !member.isScheduled
                         ? <span className="text-xs text-slate-400">Not scheduled</span>
-                        : isSelectedDateToday ? <select aria-label={`Attendance for ${member.name}`} value={member.attendanceStatus} onChange={(event) => updateRecord(member._id, 'attendanceStatus', event.target.value)} className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-                          member.attendanceStatus === 'present' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' :
-                          member.attendanceStatus === 'absent' ? 'border-rose-200 bg-rose-50 text-rose-800' :
-                          member.attendanceStatus === 'late' ? 'border-amber-200 bg-amber-50 text-amber-800' :
-                          'border-slate-200 bg-white text-slate-700'
-                        }`}>
-                        <option value="unrecorded">Not recorded</option><option value="present">Present</option><option value="absent">Absent</option><option value="late">Late</option>
-                      </select> : <span className="text-xs font-semibold capitalize text-slate-700">{member.attendanceStatus}</span>}
+                        : <span className="text-xs font-semibold capitalize text-slate-700">{String(member.attendanceStatus || 'unrecorded').replace('_', ' ')}</span>}
                   </td>
                   <td className="p-3">
-                    {isSelectedDateToday
-                      ? <input type="time" aria-label={`Time in for ${member.name}`} disabled={!member.isScheduled || !['present', 'late'].includes(member.attendanceStatus)} value={member.timeIn || ''} onChange={(event) => updateRecord(member._id, 'timeIn', event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2 text-sm disabled:bg-slate-100" />
-                      : <span className="text-slate-700">{member.timeIn || '—'}</span>}
+                    <span className="text-slate-700">{member.timeIn || '—'}</span>
                   </td>
                   <td className="p-3">
-                    {isSelectedDateToday
-                      ? <input type="time" aria-label={`Time out for ${member.name}`} disabled={!member.isScheduled || !['present', 'late'].includes(member.attendanceStatus)} value={member.timeOut || ''} onChange={(event) => updateRecord(member._id, 'timeOut', event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2 text-sm disabled:bg-slate-100" />
-                      : <span className="text-slate-700">{member.timeOut || '—'}</span>}
+                    <span className="text-slate-700">{member.timeOut || '—'}</span>
                   </td>
-                  <td className="p-3">{isSelectedDateToday ? <input disabled={!member.isScheduled || member.attendanceStatus === 'on_leave'} value={member.attendanceNote || ''} onChange={(event) => updateRecord(member._id, 'attendanceNote', event.target.value)} placeholder="Optional note" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-100" /> : <span className="text-slate-600">{member.attendanceNote || '—'}</span>}</td>
+                  <td className="p-3"><span className="text-slate-600">{member.attendanceNote || '—'}</span></td>
                   <td className="p-3">
                     {member.replacementStaffId ? (
                       <span className="text-xs font-semibold text-emerald-700">{member.replacementName || 'Replacement assigned'} · {member.rosterShift}</span>
@@ -1048,8 +999,12 @@ const TodayAttendance = () => {
   );
 };
 
-const DutyRoster = () => {
-  const [activeView, setActiveView] = useState('roster');
+const DutyRoster = ({ initialView = 'roster' }) => {
+  const [activeView, setActiveView] = useState(initialView);
+  const title = initialView === 'staff' ? 'Staff Management' : 'Staff Shift Management';
+  const description = initialView === 'staff'
+    ? 'View and manage clinic staff profiles.'
+    : 'Plan and manage weekly staff shifts.';
   const views = [
     { id: 'staff', label: 'Staff List', icon: Users },
     { id: 'roster', label: 'Duty Roster', icon: Calendar },
@@ -1058,7 +1013,7 @@ const DutyRoster = () => {
 
   return (
     <div className="space-y-5">
-      <header><h1 className="text-2xl font-bold text-slate-800">Staff Management</h1><p className="mt-1 text-sm text-slate-500">View staff profiles, plan weekly shifts, and record today’s attendance.</p></header>
+      <header><h1 className="text-2xl font-bold text-slate-800">{title}</h1><p className="mt-1 text-sm text-slate-500">{description}</p></header>
       <nav className="flex gap-2 overflow-x-auto border-b border-slate-200" aria-label="Staff management sections">
         {views.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setActiveView(id)} className={`flex shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold ${activeView === id ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>

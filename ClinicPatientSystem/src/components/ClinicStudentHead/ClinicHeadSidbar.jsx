@@ -2,30 +2,26 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
-  CheckSquare,
   Users,
+  Clock3,
+  CalendarDays,
   FileText,
-  Pill,
   BarChart3,
-  Settings,
-  ClipboardList,
   Megaphone,
+  ClipboardList,
+  Settings,
 } from 'lucide-react';
 
 const ClinicHeadSidebar = ({ isOpen = true, onNavigate }) => {
   const menuItems = [
     { label: 'Dashboard', path: '/clinic-head', icon: LayoutDashboard, end: true },
-    { label: 'Approvals & Requests', path: '/clinic-head/approvals', icon: CheckSquare },
     { label: 'Staff Management', path: '/clinic-head/staff', icon: Users },
-    { label: 'Attendance Management', path: '/clinic-head/attendance', icon: Users },
-        { label: 'Shift & Duty Schedule', path: '/clinic-head/shift-schedule', icon: Users },
-    { label: 'Patient Flow and Records', path: '/clinic-head/patients', icon: FileText },
-    { label: 'Pharmacy & Inventory Control', path: '/clinic-head/inventory', icon: Pill },
-    { label: 'Store Requisitions', path: '/clinic-head/store-requisitions', icon: ClipboardList },
-    { label: 'Reports & Analytics', path: '/clinic-head/reports', icon: BarChart3 },
-    { label: 'Department Reports', path: '/clinic-head/department-reports', icon: FileText },
-    { label: 'Announcements', path: '/clinic-head/announcements', icon: Megaphone },
-        { label: 'Activity Log', path: '/clinic-head/activity-log', icon: Megaphone },
+    { label: 'Staff Attendance', path: '/clinic-head/attendance', icon: Clock3 },
+    { label: 'Staff Shift Management', path: '/clinic-head/shift-schedule', icon: CalendarDays },
+    { label: 'Department Report', path: '/clinic-head/department-reports', icon: FileText },
+    { label: 'Reports', path: '/clinic-head/reports', icon: BarChart3 },
+    { label: 'Feedback & Complaints', path: '/clinic-head/feedback-complaints', icon: Megaphone },
+    { label: 'Audit Log', path: '/clinic-head/audit-log', icon: ClipboardList },
     { label: 'Settings', path: '/clinic-head/settings', icon: Settings },
   ];
 
