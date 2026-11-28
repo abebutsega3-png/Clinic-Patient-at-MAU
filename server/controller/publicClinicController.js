@@ -44,6 +44,7 @@ export const getPublicClinicOverview = async (req, res) => {
           departments: supportedDepartments.length
         },
         workingHours: settings?.workingHours || defaultWorkingHours,
+        workingHoursConfigured: Boolean(settings?.workingHours),
         emergencyPhone: settings?.clinicProfile?.phone || '+251583209653'
       }
     });

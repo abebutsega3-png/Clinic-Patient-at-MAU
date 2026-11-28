@@ -8,6 +8,10 @@ import Footer from './components/homedashboared/Footer.jsx';
 import HomePage from './page/HomePage.jsx';
 import AboutPage from './page/AboutPage.jsx';
 import WorkingHoursPage from './page/WorkingHoursPage.jsx';
+import CardRoomPublicPage from './page/CardRoomPublicPage.jsx';
+import ExaminationRoomPublicPage from './page/ExaminationRoomPublicPage.jsx';
+import EmergencyRoomPublicPage from './page/EmergencyRoomPublicPage.jsx';
+import EmergencyRoomDashboard from './page/EmergencyRoomDashboard.jsx';
 import ContactUs from './components/homedashboared/Contact us.jsx';
 import LoginPage from './page/LoginPage.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
@@ -36,6 +40,16 @@ import StaffAnnouncements from './components/ClinicStudentHead/StaffAnnouncement
 import ClinicHeadAttendance from './components/ClinicStudentHead/ClinicHeadAttendance.jsx';
 import ClinicHeadDepartmentReports from './components/ClinicStudentHead/ClinicHeadDepartmentReports.jsx';
 import ClinicHeadFeatureUnavailable from './components/ClinicStudentHead/ClinicHeadFeatureUnavailable.jsx';
+import {
+  AssignStaff,
+  ShiftCoverage,
+  ShiftDashboard,
+  ShiftHistory,
+  ShiftList,
+  ShiftRequests,
+  WeeklySchedule,
+} from './components/ClinicStudentHead/shiftManagement/ShiftManagementPages.jsx';
+import { ShiftManagementProvider } from './components/ClinicStudentHead/shiftManagement/ShiftManagementContext.jsx';
 import DepartmentReportSubmission from './components/DepartmentReports/DepartmentReportSubmission.jsx';
 import { CardRoomDashboard, CardRoomLayout, CardRoomUnavailable } from './components/Card Room/CardRoomModule.jsx';
 import RegisterNewPatient, { CardRoomVisitRegistration } from './components/Card Room/RegisterNewPatient.jsx';
@@ -142,6 +156,32 @@ function ClinicHeadLayout() {
   );
 }
 
+function ClinicHeadShiftManagementLayout() {
+  const { user, token } = useAuth();
+  const location = useLocation();
+  const roles = [
+    user?.activeRole,
+    user?.role,
+    ...(Array.isArray(user?.roles) ? user.roles : []),
+  ].filter(Boolean).map((role) => String(role).trim().toLowerCase().replace(/[_-]+/g, ' '));
+
+  if (!user || !token) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+  if (user.mustChangePassword) {
+    return <Navigate to="/change-password" replace />;
+  }
+  if (!roles.some((role) => role.includes('clinic head'))) {
+    return <Navigate to="/" replace />;
+  }
+
+  return (
+    <ShiftManagementProvider>
+      <Outlet />
+    </ShiftManagementProvider>
+  );
+}
+
 function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user } = useAuth();
@@ -179,6 +219,10 @@ function App() {
         <Route path="/about" element={<AboutPage />} />
         <Route path="/services" element={<><Navbar /><ServicesSection /><Footer /></>} />
         <Route path="/working-hours" element={<WorkingHoursPage />} />
+        <Route path="/departments/card-room" element={<CardRoomPublicPage />} />
+        <Route path="/departments/examination-room" element={<ExaminationRoomPublicPage />} />
+        <Route path="/departments/emergency-room" element={<EmergencyRoomPublicPage />} />
+        <Route path="/emergency-room/staff" element={<EmergencyRoomDashboard />} />
         <Route path="/contact" element={<><Navbar /><ContactUs /><Footer /></>} />
         <Route path="/departments" element={<Navigate to="/services" replace />} />
         <Route path="/appointments" element={<><Navbar /><AppointmentSection /><Footer /></>} />
@@ -209,6 +253,16 @@ function App() {
           <Route path="approvals" element={<ApprovalsAndRequests />} />
           <Route path="staff" element={<DutyRoster key="staff" initialView="staff" />} />
           <Route path="shift-schedule" element={<DutyRoster key="shift-schedule" initialView="roster" />} />
+          <Route path="shift-management" element={<ClinicHeadShiftManagementLayout />}>
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<ShiftDashboard />} />
+            <Route path="list" element={<ShiftList />} />
+            <Route path="assign" element={<AssignStaff />} />
+            <Route path="schedule" element={<WeeklySchedule />} />
+            <Route path="requests" element={<ShiftRequests />} />
+            <Route path="coverage" element={<ShiftCoverage />} />
+            <Route path="history" element={<ShiftHistory />} />
+          </Route>
           <Route path="inventory" element={<PharmacyAndInventory />} />
           <Route path="attendance" element={<Navigate to="/clinic-head/attendance/dashboard" replace />} />
           <Route path="attendance/dashboard" element={<ClinicHeadAttendance />} />

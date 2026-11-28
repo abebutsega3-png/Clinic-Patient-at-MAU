@@ -5,13 +5,13 @@ import { FaFacebookF, FaXTwitter } from 'react-icons/fa6';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const departments = [
-  { label: 'Drug Store', id: 'department-drug-store' },
-  { label: 'Emergency Room', id: 'department-emergency-room' },
-  { label: 'Injection and Dressing Room', id: 'department-injection-and-dressing-room' },
-  { label: 'Examination Room', id: 'department-examination-room' },
-  { label: 'Dispensary Room', id: 'department-dispensary-room' },
-  { label: 'Card Room', id: 'department-card-room' },
+  { label: 'Card Room', id: 'department-card-room', href: '/departments/card-room' },
+  { label: 'Emergency Room', id: 'department-emergency-room', href: '/departments/emergency-room' },
+  { label: 'Examination Room', id: 'department-examination-room', href: '/departments/examination-room' },
   { label: 'Laboratory Room', id: 'department-laboratory-room' },
+  { label: 'Injection and Dressing Room', id: 'department-injection-and-dressing-room' },
+  { label: 'Dispensary Room', id: 'department-dispensary-room' },
+  { label: 'Drug Store', id: 'department-drug-store' },
 ];
 
 const socialLinks = [
@@ -43,7 +43,7 @@ export default function Navbar() {
 
       const headerHeight = document.querySelector('header')?.offsetHeight || 0;
       const activationLine = window.scrollY + headerHeight + 24;
-      const sections = ['services', 'how-it-works']
+      const sections = ['services', 'contact']
         .map((id) => document.getElementById(id))
         .filter(Boolean);
       const currentSection = sections
@@ -66,7 +66,7 @@ export default function Navbar() {
     if (href === '/') return pathname === '/' && !activeSection;
     if (href === '/about') return pathname === '/about';
     if (href === '/#services') return pathname === '/' && activeSection === 'services';
-    if (href === '/#how-it-works') return pathname === '/' && activeSection === 'how-it-works';
+    if (href === '/#contact') return pathname === '/' && activeSection === 'contact';
     return false;
   };
 
@@ -163,15 +163,26 @@ export default function Navbar() {
               </button>
               {departmentsOpen && (
                 <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
-                  {departments.map(({ label, id }) => (
-                    <a
-                      key={id}
-                      href={`/#${id}`}
-                      onClick={() => setDepartmentsOpen(false)}
-                      className="block rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700"
-                    >
-                      {label}
-                    </a>
+                  {departments.map(({ label, id, href }) => (
+                    href ? (
+                      <Link
+                        key={id}
+                        to={href}
+                        onClick={() => setDepartmentsOpen(false)}
+                        className="block rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700"
+                      >
+                        {label}
+                      </Link>
+                    ) : (
+                      <a
+                        key={id}
+                        href={`/#${id}`}
+                        onClick={() => setDepartmentsOpen(false)}
+                        className="block rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700"
+                      >
+                        {label}
+                      </a>
+                    )
                   ))}
                 </div>
               )}
@@ -183,16 +194,16 @@ export default function Navbar() {
                 isActive('/#services') ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-700'
               }`}
             >
-              Queue Status
+              Services
             </a>
             <a
-              href="/#how-it-works"
-              aria-current={isActive('/#how-it-works') ? 'location' : undefined}
+              href="/#contact"
+              aria-current={isActive('/#contact') ? 'location' : undefined}
               className={`border-b-2 px-0.5 py-2 text-sm transition-colors hover:border-blue-600 hover:text-blue-700 ${
-                isActive('/#how-it-works') ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-700'
+                isActive('/#contact') ? 'border-blue-600 font-semibold text-blue-700' : 'border-transparent text-slate-700'
               }`}
             >
-              Patient Flow
+              Contact Us
             </a>
           </nav>
 
@@ -236,18 +247,32 @@ export default function Navbar() {
               </button>
               {departmentsOpen && (
                 <div className="ml-3 border-l border-blue-100 pl-2">
-                  {departments.map(({ label, id }) => (
-                    <a
-                      key={id}
-                      href={`/#${id}`}
-                      onClick={() => {
-                        setDepartmentsOpen(false);
-                        setMobileMenuOpen(false);
-                      }}
-                      className="block rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-700"
-                    >
-                      {label}
-                    </a>
+                  {departments.map(({ label, id, href }) => (
+                    href ? (
+                      <Link
+                        key={id}
+                        to={href}
+                        onClick={() => {
+                          setDepartmentsOpen(false);
+                          setMobileMenuOpen(false);
+                        }}
+                        className="block rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-700"
+                      >
+                        {label}
+                      </Link>
+                    ) : (
+                      <a
+                        key={id}
+                        href={`/#${id}`}
+                        onClick={() => {
+                          setDepartmentsOpen(false);
+                          setMobileMenuOpen(false);
+                        }}
+                        className="block rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-blue-50 hover:text-blue-700"
+                      >
+                        {label}
+                      </a>
+                    )
                   ))}
                 </div>
               )}
@@ -256,14 +281,14 @@ export default function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
                 className={`rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-blue-50 hover:text-blue-700 ${isActive('/#services') ? 'text-blue-700' : 'text-slate-700'}`}
               >
-                Queue Status
+                Services
               </a>
               <a
-                href="/#how-it-works"
+                href="/#contact"
                 onClick={() => setMobileMenuOpen(false)}
-                className={`rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-blue-50 hover:text-blue-700 ${isActive('/#how-it-works') ? 'text-blue-700' : 'text-slate-700'}`}
+                className={`rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-blue-50 hover:text-blue-700 ${isActive('/#contact') ? 'text-blue-700' : 'text-slate-700'}`}
               >
-                Patient Flow
+                Contact Us
               </a>
             </nav>
           )}

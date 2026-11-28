@@ -74,6 +74,8 @@ export default function LoginPage() {
         navigate('/clinic-head/store-requisitions', { replace: true });
       } else if (hasRole('pharmacist', 'drug store manager', 'dispensary room')) {
         navigate('/dispensary', { replace: true });
+      } else if (hasRole('emergency staff', 'emergency room')) {
+        navigate('/emergency-room/staff', { replace: true });
       } else if (hasRole('examination', 'exam room', 'doctor')) {
         navigate('/examination-room', { replace: true });
       } else if (result.user.department) {

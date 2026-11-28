@@ -26,6 +26,7 @@ import masterDataRoutes from './router/masterDataRoutes.js';
 import cardRoomRoutes from './router/cardRoomRoutes.js';
 import examinationRoutes from './router/examinationDashboaredRoutes.js';
 import referralLogBookRoutes from './router/referralLogBookRoutes.js';
+import emergencyRoutes from './router/emergencyRoutes.js';
 import opdRegisterRoutes from './router/opdRegisterRoutes.js';
 import staffAnnouncementRoutes from './router/staffAnnouncementRoutes.js';
 import { seedRolesAndPermissions } from './module/seedRolesAndPermissions.js';
@@ -78,6 +79,7 @@ app.use('/api/public/clinic', publicClinicRoutes);
 app.use('/api/card-room', cardRoomRoutes);
 app.use('/api/examination', examinationRoutes);
 app.use('/api/referral-log', referralLogBookRoutes);
+app.use('/api/emergency', emergencyRoutes);
 app.use('/api/opd', opdRegisterRoutes);
 app.use('/api/announcements', staffAnnouncementRoutes);
 

@@ -49,7 +49,7 @@ const statusLabel = (status) => {
 };
 
 export default function MyAttendance() {
-  const { token } = useAuth();
+  const { token, expireSession } = useAuth();
   const [month, setMonth] = useState(currentMonth);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -67,11 +67,15 @@ export default function MyAttendance() {
       setData(result);
     } catch (loadError) {
       console.error('Failed to load personal attendance:', loadError);
+      if (loadError.response?.status === 401) {
+        expireSession();
+        return;
+      }
       setError(loadError.response?.data?.message || 'Unable to load your attendance.');
     } finally {
       setLoading(false);
     }
-  }, [month, token]);
+  }, [expireSession, month, token]);
 
   useEffect(() => {
     void Promise.resolve().then(loadAttendance);
@@ -89,6 +93,10 @@ export default function MyAttendance() {
       await loadAttendance();
     } catch (actionError) {
       console.error(`Failed to ${action} attendance:`, actionError);
+      if (actionError.response?.status === 401) {
+        expireSession();
+        return;
+      }
       const message = actionError.response?.data?.message || 'Unable to record attendance.';
       if (actionError.response?.status === 409) {
         await loadAttendance();
